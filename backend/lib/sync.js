@@ -2,6 +2,7 @@ import { syncDue, retryTime } from './sync-policy.js';
 import { randomUUID } from 'node:crypto';
 import { ArborError, syncFromEnvironment } from './arbor.js';
 export async function synchronize({ store, env, client, now = new Date(), scheduled = false, finishedClock = () => new Date() }) {
+  if (env?.ARBOR_SYNC_PAUSED === 'true') return { state: 'paused', reason: 'school_sync_paused', nextRetryAt: null };
   const owner = randomUUID();
   if (!await store.acquire(owner)) throw new ArborError('sync_busy', 'A synchronization is already running');
   let previous;

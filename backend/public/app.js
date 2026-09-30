@@ -79,6 +79,7 @@ async function sync() {
   try { const result = await api('/api/admin-sync', { method: 'POST', body: '{}' }, true);
     if (data?.source === 'demo') $('date').value = tomorrow();
     await refresh();
+    if (result.state === 'paused') message('学校同步已暂停，继续显示已保存的课表。');
     if (result.state === 'skipped') message('英国时间每日 16:00 更新；失败后 10 分钟重试。目前无需再次访问学校。'); }
   catch (error) { message(error.message, true); }
   finally { busy = false; $('syncButton').disabled = false; }

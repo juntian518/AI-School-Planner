@@ -5,11 +5,9 @@
       "maxDuration": 300
     }
   },
-  "crons": [
-    {
-      "path": "/api/sync",
-      "schedule": "* * * * *"
-    }
-  ],
-  "outputDirectory": "public"
+  "crons": [],
+  "outputDirectory": "public",
+  "env": {
+    "ARBOR_SYNC_PAUSED": "true"
+  }
 }

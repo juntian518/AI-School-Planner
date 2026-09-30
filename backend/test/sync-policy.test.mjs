@@ -31,3 +31,12 @@ test('scheduler does not call school before due and failure retry uses completio
  assert.equal(records.status.nextRetryAt,'2026-09-30T15:12:00.000Z');
  await synchronize({store,client,scheduled:true,now:new Date('2026-09-30T15:11:00Z')});assert.equal(calls,1);
 });
+
+test('paused sync never accesses storage or school, including manual requests', async()=>{
+ const unexpected=async()=>{throw Error('must not be called');};
+ for (const scheduled of [true,false]) {
+  const result=await synchronize({env:{ARBOR_SYNC_PAUSED:'true'},store:{acquire:unexpected},client:{snapshot:unexpected},scheduled});
+  assert.equal(result.state,'paused');
+  assert.equal(result.nextRetryAt,null);
+ }
+});
