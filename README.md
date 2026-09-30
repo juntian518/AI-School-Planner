@@ -23,7 +23,7 @@ npm test
 npm run dev
 ```
 
-打开 http://127.0.0.1:3000 。启动时自动读取项目根目录 .env.local（支持 ARBOR_USERNAME/ARBOR_PASSWORD，也兼容 user/pass）。该文件已被 Git 忽略。配置凭据后每 30 分钟自动同步，也可点击立即同步。本地模式无需手工配置设备密钥；仅监听回环地址，以 HttpOnly 会话 Cookie 和 Origin 检查保护接口。页面输入的学校密码仅在登录请求期间使用，学校会话保存在进程内存，重启后需重新连接。默认课表保存在 Git 忽略的 backend/.data；显式配置 STORAGE_DRIVER=supabase 后使用云端数据库。
+打开 http://127.0.0.1:3000 。启动时自动读取项目根目录 .env.local（支持 ARBOR_USERNAME/ARBOR_PASSWORD，也兼容 user/pass）。该文件已被 Git 忽略。配置凭据后英国时间每日 16:00 自动同步，失败满 10 分钟后重试，也可点击立即同步。本地模式无需手工配置设备密钥；仅监听回环地址，以 HttpOnly 会话 Cookie 和 Origin 检查保护接口。页面输入的学校密码仅在登录请求期间使用，学校会话保存在进程内存，重启后需重新连接。默认课表保存在 Git 忽略的 backend/.data；显式配置 STORAGE_DRIVER=supabase 后使用云端数据库。
 
 如果暂时不登录，点击「预览演示课表」即可体验设备显示。服务器重启后请刷新页面以更新本地会话。
 

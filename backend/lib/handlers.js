@@ -65,7 +65,7 @@ export function createHandlers({ env = process.env, store, clock = () => new Dat
       return json({ ok: true, source: snapshot.source, receivedAt: snapshot.receivedAt, eventCount: snapshot.events.length });
     }),
     status: protectedHandler('GET', 'DEVICE_TOKEN', async () => json(await storage().get('status') || { state: 'never', error: null })),
-    sync: protectedHandler('GET', 'CRON_SECRET', async () => json(await synchronize({ store: storage(), env, now: clock() }))),
-    adminSync: protectedHandler('POST', 'ADMIN_TOKEN', async () => json(await synchronize({ store: storage(), env, client: syncClient?.(), now: clock() })))
+    sync: protectedHandler('GET', 'CRON_SECRET', async () => json(await synchronize({ store: storage(), env, scheduled: true, now: clock() }))),
+    adminSync: protectedHandler('POST', 'ADMIN_TOKEN', async () => json(await synchronize({ store: storage(), env, scheduled: true, client: syncClient?.(), now: clock() })))
   };
 }

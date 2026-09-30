@@ -36,7 +36,7 @@ test('current and next obey exact lesson boundaries', () => {
 test('unknown coverage and stale data are distinct from a covered empty day', () => {
   const snapshot = validateSnapshot({ ...fixture, events: [] }, now);
   assert.equal(deviceSchedule(snapshot, '2030-06-03', now).coverage, 'covered');
-  const unknown = deviceSchedule(snapshot, '2030-06-04', new Date('2030-06-04T07:50:00Z'));
+  const unknown = deviceSchedule(snapshot, '2030-06-04', new Date('2030-06-04T10:50:00Z'));
   assert.equal(unknown.coverage, 'unknown');
   assert.equal(unknown.stale, true);
   assert.deepEqual(unknown.current, []);
@@ -74,7 +74,9 @@ test('API import/read roundtrip, auth separation, no-store, and unconfigured syn
   assert.equal(result.headers.get('cache-control'), 'no-store');
   assert.equal((await result.json()).current[0].id, 'demo-1');
   assert.equal((await h.schedule(request('/api/schedule?date=2030-02-30', env.DEVICE_TOKEN))).status, 400);
-  assert.equal((await h.sync(request('/api/sync', env.CRON_SECRET))).status, 502);
+  assert.equal((await h.sync(request('/api/sync', env.CRON_SECRET))).status, 200);
+  const due = createHandlers({ env, store, clock: () => new Date('2030-06-03T15:00:00Z') });
+  assert.equal((await due.sync(request('/api/sync', env.CRON_SECRET))).status, 502);
   assert.equal(status.error.code, 'not_configured');
   assert.equal(saved.events.length, 2);
 });

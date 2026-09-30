@@ -54,7 +54,7 @@ function render() {
       const course = document.createElement('div'); const teacher = document.createElement('small'); teacher.textContent = e.staff || '老师暂无信息'; course.append(n, teacher); line.append(t, course, r); $('screenEvents').append(line);
     }
   });
-  $('screenStatus').textContent = !data ? '尚无数据' : (data.stale || Date.now() - Date.parse(data.receivedAt) > 3600000 ? '⚠ 数据已过期' : '已同步') + ' · ' + timeString(data.receivedAt);
+  $('screenStatus').textContent = !data ? '尚无数据' : (data.stale || Date.now() - Date.parse(data.receivedAt) > 26 * 3600000 ? '⚠ 数据已过期' : '已同步') + ' · ' + timeString(data.receivedAt);
 }
 async function refresh() {
   const id = ++refreshId;
@@ -78,7 +78,8 @@ async function sync() {
   busy = true; $('syncButton').disabled = true; message('正在从 Arbor 获取未来 14 天日程…');
   try { const result = await api('/api/admin-sync', { method: 'POST', body: '{}' }, true);
     if (data?.source === 'demo') $('date').value = tomorrow();
-    await refresh(); }
+    await refresh();
+    if (result.state === 'skipped') message('英国时间每日 16:00 更新；失败后 10 分钟重试。目前无需再次访问学校。'); }
   catch (error) { message(error.message, true); }
   finally { busy = false; $('syncButton').disabled = false; }
 }
@@ -141,5 +142,5 @@ $('date').value = tomorrow();
 function tick() { $('clock').textContent = timeString(new Date()); $('today').textContent = dateString(new Date()); render(); }
 try { const response = await fetch('/api/local'); if (response.ok) { const mode = await response.json(); local = mode.local === true; configured = mode.configured === true; connected = mode.connected === true; if (connected || configured) $('connectionBadge').textContent = configured ? '本地凭据已配置' : '学校已连接'; } } catch {}
 $('connectForm').hidden = !local || configured || connected; $('tokenForm').hidden = local;
-$('connectionHelp').textContent = local ? (configured ? '已读取项目 .env.local · 每 30 分钟自动同步。' : '本地连接 · 请登录一次以验证服务器同步。') : '云端连接 · 输入设备密钥查看同步结果。';
+$('connectionHelp').textContent = local ? (configured ? '已读取项目 .env.local · 英国时间每日 16:00 同步，失败 10 分钟后重试。' : '本地连接 · 请登录一次以验证服务器同步。') : '云端连接 · 输入设备密钥查看同步结果。';
 tick(); setInterval(tick, 15000); if (local) await refresh();

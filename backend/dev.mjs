@@ -59,5 +59,5 @@ createServer(async (req, res) => {
 if (env.ARBOR_USERNAME && env.ARBOR_PASSWORD) {
   setInterval(() => handlers.adminSync(new Request('http://127.0.0.1:3000/api/admin-sync', {
     method: 'POST', headers: { Authorization: 'Bearer ' + env.ADMIN_TOKEN }
-  })).catch(() => {}), 30 * 60 * 1000).unref();
+  })).catch(() => {}), 60 * 1000).unref();
 }
