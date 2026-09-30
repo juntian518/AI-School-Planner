@@ -20,15 +20,6 @@ async function api(path, options = {}, admin = false) {
   if (!response.ok) throw Error(body.message || ({ unauthorized: '访问密钥不正确。', schedule_not_available: '还没有课表，请先同步 Arbor。', server_not_configured: '服务器环境变量尚未配置。' }[body.error] || body.error));
   return body;
 }
-function showDetail(event) {
-  $('detailTitle').textContent = event.title;
-  $('detailDate').textContent = dateString(new Date(event.start));
-  $('detailTime').textContent = timeString(event.start) + ' – ' + timeString(event.end);
-  $('detailRoom').textContent = event.location || '学校未提供';
-  $('detailStaff').textContent = event.staff || '暂无老师信息，请同步更新；若仍为空则学校未提供。';
-  $('lessonDialog').showModal();
-}
-$('closeDetail').addEventListener('click', () => $('lessonDialog').close());
 function render() {
   const date = $('date').value;
   $('screenDate').textContent = date || 'SCHOOL PLANNER';
@@ -36,7 +27,7 @@ function render() {
   $('events').replaceChildren(); $('screenEvents').replaceChildren();
   const events = data?.events || [];
   const title = e => e.title.split(/\s*\(/)[0];
-  const pages = Math.max(1, Math.ceil(events.length / 5));
+  const pages = Math.max(1, Math.ceil(events.length / 4));
   page = Math.min(page, pages - 1);
   $('pageLabel').textContent = (page + 1) + ' / ' + pages;
   $('pagePrev').disabled = page === 0; $('pageNext').disabled = page === pages - 1;
@@ -50,17 +41,17 @@ function render() {
     for (const id of ['events', 'screenEvents']) { const p = document.createElement('p'); p.className = 'empty'; p.textContent = emptyText; $(id).append(p); }
   }
   events.forEach((e, index) => {
-    const row = document.createElement('button'); row.type = 'button'; row.className = 'event'; row.addEventListener('click', () => showDetail(e)); row.setAttribute('aria-label', title(e) + ' ' + timeString(e.start) + ' 课程详情');
+    const row = document.createElement('div'); row.className = 'event';
     const time = document.createElement('span'); time.textContent = timeString(e.start) + ' – ' + timeString(e.end);
     const info = document.createElement('div'); const name = document.createElement('strong'); name.textContent = title(e);
-    const full = document.createElement('small'); full.textContent = e.title + (e.staff ? ' · ' + e.staff : ''); info.append(name, full);
+    const full = document.createElement('small'); full.textContent = e.title; const teacher = document.createElement('small'); teacher.textContent = '老师：' + (e.staff || '暂无信息'); info.append(name, full, teacher);
     const room = document.createElement('span'); room.className = 'room'; room.textContent = e.location || '未提供教室'; row.append(time, info, room); $('events').append(row);
-    if (index >= page * 5 && index < (page + 1) * 5) {
-      const line = document.createElement('button'); line.type = 'button'; line.className = 'screen-event'; line.addEventListener('click', () => showDetail(e)); line.setAttribute('aria-label', title(e) + ' ' + timeString(e.start) + ' 查看详情');
+    if (index >= page * 4 && index < (page + 1) * 4) {
+      const line = document.createElement('div'); line.className = 'screen-event';
       const t = document.createElement('span'); t.textContent = time.textContent;
       const n = document.createElement('strong'); n.textContent = title(e);
       const r = document.createElement('span'); r.textContent = e.location || '—';
-      line.append(t, n, r); $('screenEvents').append(line);
+      const course = document.createElement('div'); const teacher = document.createElement('small'); teacher.textContent = e.staff || '老师暂无信息'; course.append(n, teacher); line.append(t, course, r); $('screenEvents').append(line);
     }
   });
   $('screenStatus').textContent = !data ? '尚无数据' : (data.stale || Date.now() - Date.parse(data.receivedAt) > 3600000 ? '⚠ 数据已过期' : '已同步') + ' · ' + timeString(data.receivedAt);
