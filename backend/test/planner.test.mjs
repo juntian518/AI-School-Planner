@@ -140,3 +140,14 @@ test('Redis REST stores a complete snapshot without expiring the offline fallbac
   assert.equal((await store.get()).source, 'demo');
   assert.equal(calls[1].length, 3);
 });
+
+
+test('device snapshot returns full offline coverage only with device authorization', async () => {
+  const saved = validateSnapshot(fixture, now);
+  const h = createHandlers({ env, store: {get:async()=>saved} });
+  assert.equal((await h.snapshot(request('/api/device-snapshot',env.ADMIN_TOKEN))).status,401);
+  const result = await h.snapshot(request('/api/device-snapshot',env.DEVICE_TOKEN));
+  assert.equal(result.status,200);
+  assert.equal(result.headers.get('cache-control'),'no-store');
+  assert.deepEqual(await result.json(),saved);
+});

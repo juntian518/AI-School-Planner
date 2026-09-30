@@ -44,6 +44,11 @@ export function createHandlers({ env = process.env, store, clock = () => new Dat
     }
   };
   return {
+    snapshot: protectedHandler('GET', 'DEVICE_TOKEN', async () => {
+      const snapshot = await storage().get();
+      if (!snapshot) return json({ error: 'schedule_not_available' }, 503);
+      return json(snapshot);
+    }),
     schedule: protectedHandler('GET', 'DEVICE_TOKEN', async request => {
       const now = clock();
       const date = new URL(request.url).searchParams.get('date') ?? londonDate(now);

@@ -8,3 +8,7 @@ private/
 *.har
 firmware/.pio/
 firmware/include/secrets.h
+
+firmware/tools/venv/
+firmware/.pio-core/
+firmware/include/ca_bundle.h

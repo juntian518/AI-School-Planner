@@ -40,7 +40,7 @@ createServer(async (req, res) => {
         return send({ connected: true });
       } finally { connecting = false; }
     }
-    const handler = { '/api/schedule': handlers.schedule, '/api/status': handlers.status,
+    const handler = { '/api/device-snapshot': handlers.snapshot, '/api/schedule': handlers.schedule, '/api/status': handlers.status,
       '/api/admin-sync': handlers.adminSync, '/api/import': handlers.import }[url.pathname];
     if (!handler) return send({ error: 'not_found' }, 404);
     const token = ['/api/import', '/api/admin-sync'].includes(url.pathname) ? env.ADMIN_TOKEN : env.DEVICE_TOKEN;
