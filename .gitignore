@@ -8,4 +8,3 @@ private/
 *.har
 firmware/.pio/
 firmware/include/secrets.h
-

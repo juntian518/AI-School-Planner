@@ -29,4 +29,3 @@ npm run dev
 - `docs/`：部署步骤与 Arbor 接入调查记录。
 
 GitHub: https://github.com/juntian518/AI-School-Planner
-
