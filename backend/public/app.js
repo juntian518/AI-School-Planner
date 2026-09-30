@@ -1,6 +1,12 @@
 const $ = id => document.getElementById(id);
 let local = false, data = null, deviceToken = '', adminToken = '', busy = false, configured = false, connected = false;
-let refreshId = 0;
+let refreshId = 0, page = 0;
+function shiftDate(value, days) {
+  const date = new Date(value + 'T12:00:00Z');
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+const tomorrow = () => shiftDate(dateString(new Date()), 1);
 const dateFormat = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/London', year: 'numeric', month: '2-digit', day: '2-digit' });
 const timeFormat = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/London', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const dateString = d => dateFormat.format(d);
@@ -16,42 +22,44 @@ async function api(path, options = {}, admin = false) {
 }
 function render() {
   const date = $('date').value;
-  const preview = $('liveTime').checked ? timeString(new Date()) : $('previewTime').value;
-  $('screenClock').textContent = preview || '--:--';
   $('screenDate').textContent = date || 'SCHOOL PLANNER';
-  $('events').replaceChildren();
-  if (!data) {
-    $('dayCount').textContent = '0 项'; $('lessonTitle').textContent = '尚无可用课表'; $('lessonDetail').textContent = '连接并同步后查看当天安排。';
-    $('lessonLabel').textContent = '等待数据'; $('nextTitle').textContent = '—'; $('nextTime').textContent = '';
-    $('source').textContent = '未加载'; $('screenStatus').textContent = '尚无数据'; $('week').textContent = '—'; return;
-  }
-  const events = data.events;
-  const current = events.filter(e => timeString(e.start) <= preview && preview < timeString(e.end));
-  const next = events.find(e => timeString(e.start) > preview);
-  const lesson = current[0];
+  $('screenHeading').textContent = date === tomorrow() ? '明天的安排' : '所选日期安排';
+  $('events').replaceChildren(); $('screenEvents').replaceChildren();
+  const events = data?.events || [];
   const title = e => e.title.split(/\s*\(/)[0];
-  $('source').textContent = ({ arbor: 'ARBOR', demo: '演示数据', manual: '手动导入' }[data.source] || data.source);
+  const pages = Math.max(1, Math.ceil(events.length / 5));
+  page = Math.min(page, pages - 1);
+  $('pageLabel').textContent = (page + 1) + ' / ' + pages;
+  $('pagePrev').disabled = page === 0; $('pageNext').disabled = page === pages - 1;
+  $('source').textContent = data ? ({ arbor: 'ARBOR', demo: '演示数据', manual: '手动导入' }[data.source] || data.source) : '未加载';
   const week = events.find(e => e.week)?.week;
   $('week').textContent = week ? 'WEEK ' + week : '—';
-  $('lessonLabel').textContent = lesson ? (current.length > 1 ? '当前 · ' + current.length + ' 项活动' : '当前课程') : '当前安排';
-  $('lessonTitle').textContent = lesson ? title(lesson) : data.coverage === 'unknown' ? '该日期尚未同步' : next ? '课间 / 等待上课' : events.length ? '今天的课程已结束' : '今天没有课程';
-  $('lessonDetail').textContent = lesson ? timeString(lesson.start) + ' – ' + timeString(lesson.end) + ' · ' + (lesson.location || '教室未提供') : '查看下方完整日程';
-  $('nextTitle').textContent = next ? title(next) : '没有后续课程'; $('nextTime').textContent = next ? timeString(next.start) : '';
-  const old = data.stale || Date.now() - Date.parse(data.receivedAt) > 3600000;
-  $('screenStatus').textContent = (old ? '⚠ 数据已过期' : '已读取') + ' · ' + timeString(data.receivedAt);
   $('dayCount').textContent = events.length + ' 项';
-  if (!events.length) { const p = document.createElement('p'); p.className = 'empty'; p.textContent = data.coverage === 'unknown' ? '没有该日期的同步数据，不能确定当天是否有课。' : '已同步该日期，没有安排。'; $('events').append(p); }
-  events.forEach(e => {
-    const row = document.createElement('div'); row.className = 'event' + (current.includes(e) ? ' current' : '');
+  $('screenSummary').textContent = events.length ? events.length + ' 项 · ' + timeString(events[0].start) + ' 开始' : '';
+  const emptyText = !data ? '尚无可用课表，请同步后查看。' : data.coverage === 'unknown' ? '该日期尚未同步，不能确定是否有安排。' : '已同步该日期，没有安排。';
+  if (!events.length) {
+    for (const id of ['events', 'screenEvents']) { const p = document.createElement('p'); p.className = 'empty'; p.textContent = emptyText; $(id).append(p); }
+  }
+  events.forEach((e, index) => {
+    const row = document.createElement('div'); row.className = 'event';
     const time = document.createElement('span'); time.textContent = timeString(e.start) + ' – ' + timeString(e.end);
     const info = document.createElement('div'); const name = document.createElement('strong'); name.textContent = title(e);
     const full = document.createElement('small'); full.textContent = e.title; info.append(name, full);
     const room = document.createElement('span'); room.className = 'room'; room.textContent = e.location || '未提供教室'; row.append(time, info, room); $('events').append(row);
+    if (index >= page * 5 && index < (page + 1) * 5) {
+      const line = document.createElement('div'); line.className = 'screen-event';
+      const t = document.createElement('span'); t.textContent = time.textContent;
+      const n = document.createElement('strong'); n.textContent = title(e);
+      const r = document.createElement('span'); r.textContent = e.location || '—';
+      line.append(t, n, r); $('screenEvents').append(line);
+    }
   });
+  $('screenStatus').textContent = !data ? '尚无数据' : (data.stale || Date.now() - Date.parse(data.receivedAt) > 3600000 ? '⚠ 数据已过期' : '已同步') + ' · ' + timeString(data.receivedAt);
 }
 async function refresh() {
   const id = ++refreshId;
   const requestedDate = $('date').value;
+  data = null; page = 0; render();
   try {
     const status = await api('/api/status');
     if (id !== refreshId) return;
@@ -69,7 +77,7 @@ async function sync() {
   if (busy) return;
   busy = true; $('syncButton').disabled = true; message('正在从 Arbor 获取未来 14 天日程…');
   try { const result = await api('/api/admin-sync', { method: 'POST', body: '{}' }, true);
-    if ($('date').value < result.coverageStart || $('date').value > result.coverageEnd) $('date').value = result.coverageStart;
+    if (data?.source === 'demo') $('date').value = tomorrow();
     await refresh(); }
   catch (error) { message(error.message, true); }
   finally { busy = false; $('syncButton').disabled = false; }
@@ -86,7 +94,7 @@ $('connectForm').addEventListener('submit', async event => {
 $('tokenForm').addEventListener('submit', event => { event.preventDefault(); deviceToken = $('deviceToken').value; adminToken = $('adminToken').value; $('deviceToken').value = ''; $('adminToken').value = ''; refresh(); });
 $('demoButton').addEventListener('click', () => {
   ++refreshId;
-  $('date').value = '2030-06-03'; $('previewTime').value = '09:00'; $('liveTime').checked = false; $('previewTime').disabled = false;
+  $('date').value = '2030-06-03'; page = 0;
   data = { source: 'demo', receivedAt: new Date().toISOString(), coverage: 'covered', stale: false, events: [
     { id: 'demo-1', title: 'English (Demo)', location: 'Room A', start: '2030-06-03T07:40:00Z', end: '2030-06-03T08:30:00Z', week: 'A' },
     { id: 'demo-2', title: 'Mathematics (Demo)', location: 'Room B', start: '2030-06-03T08:30:00Z', end: '2030-06-03T09:20:00Z', week: 'A' },
@@ -95,9 +103,12 @@ $('demoButton').addEventListener('click', () => {
   message('仅界面演示：虚构课表，不会写入或覆盖同步结果。点击刷新结果返回服务器数据。'); render();
 });
 $('syncButton').addEventListener('click', sync); $('refreshButton').addEventListener('click', refresh);
-$('date').addEventListener('change', refresh); $('previewTime').addEventListener('input', render);
-$('liveTime').addEventListener('change', () => { $('previewTime').disabled = $('liveTime').checked; render(); });
-$('date').value = dateString(new Date()); $('previewTime').value = timeString(new Date()); $('previewTime').disabled = true;
+$('date').addEventListener('change', refresh);
+for (const [id, days] of [['previousDay', -1], ['nextDay', 1]]) $(id).addEventListener('click', () => { $('date').value = shiftDate($('date').value || tomorrow(), days); refresh(); });
+$('tomorrowButton').addEventListener('click', () => { $('date').value = tomorrow(); refresh(); });
+$('pagePrev').addEventListener('click', () => { page--; render(); });
+$('pageNext').addEventListener('click', () => { page++; render(); });
+$('date').value = tomorrow();
 function tick() { $('clock').textContent = timeString(new Date()); $('today').textContent = dateString(new Date()); render(); }
 try { const response = await fetch('/api/local'); if (response.ok) { const mode = await response.json(); local = mode.local === true; configured = mode.configured === true; connected = mode.connected === true; if (connected || configured) $('connectionBadge').textContent = configured ? '本地凭据已配置' : '学校已连接'; } } catch {}
 $('connectForm').hidden = !local || configured || connected; $('tokenForm').hidden = local;
