@@ -3,9 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": "22.x" },
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
-    "dev": "node --env-file=.env dev.mjs",
+    "dev": "node --env-file-if-exists=../.env.local --env-file-if-exists=.env dev.mjs",
     "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "cheerio": "1.2.0",
+    "tough-cookie": "6.0.2"
   }
 }

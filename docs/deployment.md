@@ -1,11 +1,19 @@
-# 部署到 Vercel
+# Vercel 部署
 
-1. 将代码同步到用户指定仓库 `juntian518/AI-School-Planner`。
-2. 在已有的 Vercel Pro 团队导入该仓库。Root Directory: `backend`，Framework: Other，Node: 22.x；无需自定义构建命令。
-3. 准备 Upstash Redis，将 REST URL/token 填入 Vercel 的生产环境变量。
-4. 设置 `STORAGE_DRIVER=redis`，独立随机 `DEVICE_TOKEN`、`ADMIN_TOKEN`、`CRON_SECRET`（至少 32 字符）。不要提交到 Git。
-5. 部署并验证：未鉴权 GET /api/schedule 应为 401；已鉴权但无数据应为 503。用 demo 快照完成导入/查询验证后再换成真实数据。
-6. 当前 `/api/sync` 会返回 501。确认真实 Arbor 数据读取、重新登录、失败保留缓存后，再添加每 30 分钟 Cron。当前不启用空跑定时任务。
-7. 将部署域名和 DEVICE_TOKEN 配置给后续固件，保持 HTTPS 证书验证。
+1. 导入 juntian518/AI-School-Planner，Root Directory=backend，Framework=Other，Node.js=22.x。静态页面位于 public，API 位于 api。
+2. 为生产环境准备 Upstash Redis，设置 UPSTASH_REDIS_REST_URL、UPSTASH_REDIS_REST_TOKEN、STORAGE_DRIVER=redis。
+3. 设置独立随机 DEVICE_TOKEN、ADMIN_TOKEN、CRON_SECRET（至少 32 字符）。
+4. 设置 ARBOR_STUDENT_ID、ARBOR_USERNAME、ARBOR_PASSWORD。学校密码只放服务端环境变量，不进入 Git 或页面代码。
+5. 部署后打开页面，输入设备密钥和管理密钥，点击「立即同步 Arbor」。
+6. 验证 source=arbor、日期覆盖完整、科目/时间/教室与学校一致。
+7. vercel.json 已配置以下定时任务：每 30 分钟调用 /api/sync。请在第一次生产部署时配置齐全环境变量；若暂时不准备同步，可先移除 crons。
 
-本地测试通过不等于云端部署已通过。Vercel、Redis 和真实硬件必须分别验证。
+```json
+{ "crons": [{ "path": "/api/sync", "schedule": "*/30 * * * *" }] }
+```
+
+Cron 使用 CRON_SECRET 验证。同步函数最长配置为 300 秒，Redis 锁有效期 330 秒。同步失败保留上一次日程。连接过期、上游格式变化等错误在模拟页显示。
+
+预览环境请禁用学校凭据或使用独立数据库，避免与生产共享日程及状态。不要关闭 Vercel 的其他安全功能来让设备访问；如部署保护拦截设备，需按账户实际设置配置受支持的机器访问方式。
+
+参考：[Vercel Functions](https://vercel.com/docs/functions/runtimes/node-js)、[Cron 管理](https://vercel.com/docs/cron-jobs/manage-cron-jobs)、[Upstash REST](https://upstash.com/docs/redis/features/restapi)。

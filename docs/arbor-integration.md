@@ -1,22 +1,29 @@
-# Arbor 接入调查
+# Arbor 同步
 
-## 浏览器已验证
+## 已观察的协议
 
-- 家长端可登录并查看 Calendar。
-- Day 视图显示科目名称、开始/结束时间与教室。
-- 5 Days 视图显示课程代码和 Week A/B。
-- Printable Timetable 提供日期范围选择与 Download 入口。
-- 本次浏览器点击兼容性问题可通过控件获得焦点后按 Enter 解决。
+公开前端代码中，登录 POST /auth/login，JSON 为 items 数组中的 username/password。日历控件使用自身 dataUrl，POST action_params 包含 view、startDate、endDate、filters。返回 items[0].fields.response.value.pages，每页包含 HTML。
 
-## 尚未验证
+先访问学校首页初始化 mis 会话，再登录。日历页面配置使用 /guardians/student-ui/calendar/id/{id}?format=javascript，返回 JSON 内容。实际组件为 Arbor.calendar.Calendar，props 提供 referenceObjectTypeId/referenceObjectId；未覆盖 dataUrl 时使用已核对的前端默认 /calendar-entry/list-static/format/json/。所有请求固定限制为 Tiffin School 同源 HTTPS，Cookie 由 tough-cookie 管理。
 
-- 日历 HTTP 请求的 URL、参数、响应结构。
-- 是否存在学校允许的 ICS 或正式家长 API。
-- 服务端登录、CSRF、会话有效期、重新登录及可能的验证码。
-- Vercel 环境下是否能稳定访问上游。
+已检查实际日视图 DOM：table.mis-cal-day、.mis-cal-event、data-eventid、.mis-cal-event-time、.title、data-datetime。日历提供英国当地时间，转换为 UTC 后保存。A/B 周从标题获取。HTML 只进行文本解析，不作为脚本执行。
 
-浏览器会话不能直接视为 Vercel 的可用凭据。不得从单周固定模板推断所有日期；节假日、临时调整和 A/B 周必须按数据源的具体日期处理。
+## 完整性
 
-## 下一步验收
+读取未来 14 天，每天必须有对应日期的合法日视图。利用上游附带的相邻页减少请求，校验完整范围后才替换快照。任何单日格式错误均使同步失败，避免部分成功丢失原课表。
 
-确认真实读取路径后实现独立 Arbor adapter；先取完整快照、校验通过后才替换数据库。网络或登录失败保留旧快照。拒绝将登录页、错误页或解析失败当成空课表。同步端加入并发锁/超时，避免重复抓取。会话失效通过管理端提示重新登录，学校凭据永不下发给 ESP32。
+空课表必须有合法日期表格。登录页、错误页、日期不符、缺失标题或时间、当前不支持的全天事件会报告错误，保留旧快照。夏令时重叠/不存在的当地时间也拒绝自动猜测。
+
+## 登录与部署边界
+
+- 本地：用户在连接页输入账户，密码不保存，Cookie 只保留在服务进程内存。
+- 云端：学校账户由 Vercel 环境变量提供，每次同步建立新的会话。
+- 如果学校需要额外 SSO、验证码或同意条款，适配器不会绕过，需调整接入方式。
+- 已通过模拟 HTTP/解析测试，以及真实账户的本地登录、14 天读取、缓存和页面显示验证。
+- Vercel 云端环境尚未部署验收，需单独验证网络访问和 Redis。
+- Cookie/JWT 在学校升级后可能改变；必须以实际验收结果为准。
+
+## 参考
+
+Waveshare/学校网页与公开 JS 的读取是调查依据，不是 Arbor 官方开放 API 承诺。
+实现前端协议的适配器可能随学校升级而需要维护。

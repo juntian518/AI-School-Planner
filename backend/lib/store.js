@@ -1,24 +1,27 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
+const locks = new Map();
 
 export function createStore(env = process.env, fetcher = fetch) {
   const driver = env.STORAGE_DRIVER || 'redis';
   if (driver === 'file') {
     if (env.VERCEL || env.NODE_ENV === 'production') throw new Error('File storage is local-only');
     const directory = env.DATA_DIR || join(process.cwd(), '.data');
-    const path = join(directory, 'schedule.json');
+    const pathFor = key => join(directory, key === 'status' ? 'sync-status.json' : 'schedule.json');
     return {
-      async get() {
-        try { return JSON.parse(await readFile(path, 'utf8')); }
+      async get(key) {
+        try { return JSON.parse(await readFile(pathFor(key), 'utf8')); }
         catch (error) { if (error.code === 'ENOENT') return null; throw error; }
       },
-      async set(snapshot) {
+      async set(snapshot, key) {
         await mkdir(directory, { recursive: true });
         const temporary = join(directory, `${randomUUID()}.tmp`);
         await writeFile(temporary, JSON.stringify(snapshot), { encoding: 'utf8', mode: 0o600 });
-        await rename(temporary, path);
-      }
+        await rename(temporary, pathFor(key));
+      },
+      async acquire(owner) { if (locks.has(directory)) return false; locks.set(directory, owner); return true; },
+      async release(owner) { if (locks.get(directory) === owner) locks.delete(directory); }
     };
   }
   if (driver !== 'redis') throw new Error('Unsupported storage driver');
@@ -35,9 +38,12 @@ export function createStore(env = process.env, fetcher = fetch) {
     if (body.error) throw new Error('Storage command failed');
     return body.result;
   }
-  const key = 'school-planner:schedule:v1';
+  const keyFor = key => key === 'status' ? 'school-planner:status:v1' : 'school-planner:schedule:v1';
+  const lock = 'school-planner:sync-lock:v1';
   return {
-    async get() { const value = await command(['GET', key]); return value === null ? null : JSON.parse(value); },
-    async set(value) { await command(['SET', key, JSON.stringify(value)]); }
+    async get(key) { const value = await command(['GET', keyFor(key)]); return value === null ? null : JSON.parse(value); },
+    async set(value, key) { await command(['SET', keyFor(key), JSON.stringify(value)]); },
+    async acquire(owner) { return await command(['SET', lock, owner, 'NX', 'EX', 330]) === 'OK'; },
+    async release(owner) { await command(['EVAL', 'if redis.call("get",KEYS[1]) == ARGV[1] then return redis.call("del",KEYS[1]) else return 0 end', 1, lock, owner]); }
   };
 }

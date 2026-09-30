@@ -1,5 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { createStore } from './store.js';
+import { ArborError } from './arbor.js';
+import { synchronize } from './sync.js';
 import { deviceSchedule, InputError, londonDate, validateSnapshot } from './schedule.js';
 
 function json(body, status = 200, headers = {}) {
@@ -28,7 +30,7 @@ async function readJson(request) {
   catch { throw new InputError('Invalid JSON'); }
 }
 
-export function createHandlers({ env = process.env, store, clock = () => new Date() } = {}) {
+export function createHandlers({ env = process.env, store, clock = () => new Date(), syncClient } = {}) {
   const storage = () => store || createStore(env);
   const protectedHandler = (method, secretName, action) => async request => {
     if (request.method !== method) return json({ error: 'method_not_allowed' }, 405, { Allow: method });
@@ -36,6 +38,7 @@ export function createHandlers({ env = process.env, store, clock = () => new Dat
     if (!authorized(request, env[secretName])) return json({ error: 'unauthorized' }, 401);
     try { return await action(request); }
     catch (error) {
+      if (error instanceof ArborError) return json({ error: error.code, message: error.message }, error.code === 'sync_busy' ? 409 : 502);
       if (error instanceof InputError) return json({ error: 'invalid_input', message: error.message }, 400);
       return json({ error: 'storage_unavailable' }, 503);
     }
@@ -56,9 +59,8 @@ export function createHandlers({ env = process.env, store, clock = () => new Dat
       await storage().set(snapshot);
       return json({ ok: true, source: snapshot.source, receivedAt: snapshot.receivedAt, eventCount: snapshot.events.length });
     }),
-    sync: protectedHandler('GET', 'CRON_SECRET', async () => json({
-      error: 'arbor_sync_not_configured',
-      message: 'Arbor automated login and calendar retrieval have not been verified. Existing schedule is unchanged.'
-    }, 501))
+    status: protectedHandler('GET', 'DEVICE_TOKEN', async () => json(await storage().get('status') || { state: 'never', error: null })),
+    sync: protectedHandler('GET', 'CRON_SECRET', async () => json(await synchronize({ store: storage(), env, now: clock() }))),
+    adminSync: protectedHandler('POST', 'ADMIN_TOKEN', async () => json(await synchronize({ store: storage(), env, client: syncClient?.(), now: clock() })))
   };
 }

@@ -61,9 +61,10 @@ test('overlapping activities are retained and user supplied receivedAt is ignore
   assert.equal(deviceSchedule(snapshot, '2030-06-03', now).current.length, 2);
 });
 
-test('API import/read roundtrip, auth separation, no-store, and unsupported sync', async () => {
+test('API import/read roundtrip, auth separation, no-store, and unconfigured sync', async () => {
   let saved = null;
-  const store = { get: async () => saved, set: async value => { saved = value; } };
+  let status = null;
+  const store = { get: async key => key === 'status' ? status : saved, set: async (value,key) => { if (key === 'status') status = value; else saved = value; }, acquire: async () => true, release: async () => {} };
   const h = createHandlers({ env, store, clock: () => now });
   assert.equal((await h.schedule(request('/api/schedule', env.DEVICE_TOKEN))).status, 503);
   assert.equal((await h.schedule(request('/api/schedule', env.ADMIN_TOKEN))).status, 401);
@@ -73,7 +74,8 @@ test('API import/read roundtrip, auth separation, no-store, and unsupported sync
   assert.equal(result.headers.get('cache-control'), 'no-store');
   assert.equal((await result.json()).current[0].id, 'demo-1');
   assert.equal((await h.schedule(request('/api/schedule?date=2030-02-30', env.DEVICE_TOKEN))).status, 400);
-  assert.equal((await h.sync(request('/api/sync', env.CRON_SECRET))).status, 501);
+  assert.equal((await h.sync(request('/api/sync', env.CRON_SECRET))).status, 502);
+  assert.equal(status.error.code, 'not_configured');
   assert.equal(saved.events.length, 2);
 });
 

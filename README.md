@@ -1,31 +1,41 @@
 # AI School Planner
 
-ESP32-S3 学校日程显示器。后端部署到 Vercel，设备通过 HTTPS 获取日程。
+ESP32-S3 学校日程显示器：Arbor → Vercel 后端与缓存 → 设备/浏览器预览。
 
-## 当前进度
+## 已实现
 
-- 已实现：设备鉴权、日程 JSON 校验、Europe/London 日期处理、当前/下一节课程、缓存过期标记、手动导入、Upstash Redis 存储适配、本地运行及测试。
-- 已确认：Arbor 浏览器日历可显示课程时间、教室、Week A/B，并有 Printable Timetable 入口。
-- **尚未实现：Arbor 自动登录/续期与自动抓取、屏幕固件、实际 Vercel 部署。** `/api/sync` 返回明确的 501，不会假报同步成功。
-- 仓库只包含虚构的测试数据，不包含真实学生课表、账户或 Cookie。
+- Arbor HTTP 登录适配器，从返回的页面配置发现日历端点与学生过滤条件。
+- 按英国当地日期读取未来 14 天日程，解析科目、时间、教室、A/B 周。
+- 完整快照校验后替换缓存；失败保留旧数据；同步锁与状态记录。
+- 设备鉴权、管理同步接口、Redis/本地文件存储。
+- 浏览器模拟页：480×320 屏幕预览、完整课表、日期与时间切换、同步状态。
+- 独立演示模式：虚构数据只存在页面内存，不覆盖课表。
 
-## 本地运行（Node.js 22）
+**已通过真实学校账号的本地登录、14 天课表读取、缓存和模拟页显示验证。Vercel 云端部署及 ESP32 可烧录固件尚未完成。**
 
-在 `backend` 目录执行：
+## 本地运行
+
+Node.js 22，在 backend 目录：
 
 ```powershell
-Copy-Item .env.example .env
-# 编辑 .env，给 DEVICE_TOKEN、ADMIN_TOKEN、CRON_SECRET 设置不同的随机值（至少 32 字符）
+npm ci
 npm test
 npm run dev
 ```
 
-打开终端提示的本地地址查看接口说明。默认仅监听 `127.0.0.1`，本地文件缓存放在被 Git 忽略的 `.data` 中。API 使用说明见 [backend/README.md](backend/README.md)。
+打开 http://127.0.0.1:3000 。启动时自动读取项目根目录 .env.local（支持 ARBOR_USERNAME/ARBOR_PASSWORD，也兼容 user/pass）。该文件已被 Git 忽略。配置凭据后每 30 分钟自动同步，也可点击立即同步。本地模式无需手工配置设备密钥；仅监听回环地址，以 HttpOnly 会话 Cookie 和 Origin 检查保护接口。页面输入的学校密码仅在登录请求期间使用，学校会话保存在进程内存，重启后需重新连接。课表保存在 Git 忽略的 backend/.data。
 
-## 项目结构
+如果暂时不登录，点击「预览演示课表」即可体验设备显示。服务器重启后请刷新页面以更新本地会话。
 
-- `backend/`：Vercel Node.js Functions，无第三方运行时依赖。
-- `firmware/`：硬件信息与固件开发边界；尚无可烧录固件。
-- `docs/`：部署步骤与 Arbor 接入调查记录。
+## 云端
 
-GitHub: https://github.com/juntian518/AI-School-Planner
+Vercel 根目录设为 backend；在服务端环境变量中配置学校账户、Redis 与独立访问密钥。云端页面使用设备/管理密钥访问 API，不提供公开学校密码表单。参见 [部署说明](docs/deployment.md)。
+
+## 目录
+
+- backend/：API、Arbor 适配器、浏览器模拟页、测试。
+- firmware/：硬件信息与后续固件要求。
+- docs/：部署与数据接入说明。
+- private/、.data/、.env：本地私有文件，已忽略。
+
+仓库：https://github.com/juntian518/AI-School-Planner

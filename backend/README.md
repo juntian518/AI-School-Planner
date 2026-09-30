@@ -1,39 +1,36 @@
-# Backend API
+# 后端及模拟页面
 
-Node.js 22，无运行时第三方依赖。Vercel Root Directory 设为 `backend`，Framework Preset 为 Other。
+运行 npm ci、npm test、npm run dev，打开 http://127.0.0.1:3000。
+页面可查看同步状态、选择日期、模拟当前时间，并展示设备预览与完整课表。
 
 ## API
 
-| 路径 | 方法 | 身份 | 用途 |
-|---|---|---|---|
-| `/api/schedule?date=YYYY-MM-DD` | GET | DEVICE_TOKEN | 读取选定的英国当地日期；省略日期为今天 |
-| `/api/import` | POST | ADMIN_TOKEN | 原子替换完整日程快照，非增量合并 |
-| `/api/sync` | GET | CRON_SECRET | 预留自动同步入口，目前返回 501 |
+| 路径 | 方法 | 身份 |
+|---|---|---|
+| /api/schedule?date=YYYY-MM-DD | GET | DEVICE_TOKEN |
+| /api/status | GET | DEVICE_TOKEN |
+| /api/admin-sync | POST | ADMIN_TOKEN |
+| /api/sync | GET | CRON_SECRET |
+| /api/import | POST | ADMIN_TOKEN |
 
-每个请求通过 `Authorization: Bearer <token>` 传递密钥。密钥至少 32 字符，三者必须自行设为不同的随机值。设备只持有 DEVICE_TOKEN。所有响应禁止共享缓存。
+生产 API 使用 Authorization: Bearer 密钥，至少 32 字符。设备、管理、Cron 使用不同的随机密钥。响应均禁止共享缓存。
 
-`fixtures/demo.json` 定义完整导入格式（虚构数据）。日期范围是“已知已读取完整”的范围，空日程不代表读取失败。`coverage: unknown` 表示查询日期未覆盖，不能显示为“当天无课”。`stale: true` 表示超过一小时未导入。`receivedAt` 是服务器收到数据的时间，不是假称的 Arbor 同步时间。
+同步读取未来 14 天，失败返回非 2xx 并记录错误，保留已有快照。Redis 分布式锁避免并发重复登录和抓取。本地进程使用内存锁。同步状态的 succeededAt 表示最近一次成功，即使最新尝试失败也会保留。
 
-`current` 是数组，保留可能重叠的活动；`next` 是所查询的今天内下一项活动，非今天的查询返回空值。完整 `events` 始终保留，设备应根据网络校时后的本地时钟自行更新当前课程，而不是等下一次轮询。
+source 可为 arbor、manual、demo；只有真实同步适配器可写入 arbor。手动导入只能使用 manual/demo，原子替换全部数据。fixtures/demo.json 为虚构格式样例。
 
-## 本地导入示例（PowerShell）
+coverage: unknown 表示所选日期未覆盖，不能解释为当天无课；stale 表示超过一小时没有更新。current 保留重叠活动。设备仍需按本地时钟更新课程，而非等待轮询。
 
-先按根目录说明创建 `.env` 并启动服务。在另一终端的 backend 目录输入：
+## 本地登录
 
-```powershell
-$adminToken = Read-Host 'ADMIN_TOKEN'
-Invoke-RestMethod -Uri http://127.0.0.1:3000/api/import -Method Post -Headers @{ Authorization = "Bearer $adminToken" } -ContentType application/json -InFile fixtures/demo.json
-$deviceToken = Read-Host 'DEVICE_TOKEN'
-Invoke-RestMethod -Uri 'http://127.0.0.1:3000/api/schedule?date=2030-06-03' -Headers @{ Authorization = "Bearer $deviceToken" }
-```
+/api/connect 只存在于本地开发服务器，不是 Vercel Function。密码不落盘，只将登录会话保留在内存。接口要求本地 Cookie 且 POST Origin 必须精确匹配本地服务。只接受 Tiffin School 作为学校数据目的地，跨域重定向被拒绝。
+
+本地服务自动读取根目录 .env.local 的 ARBOR_USERNAME/ARBOR_PASSWORD（兼容 user/pass）。配置时每 30 分钟自动同步。手工表单连接仅支持当前进程内主动同步。
+
+本地服务自动为 API 注入临时密钥；不能作为对外部署服务器使用。在云端以环境变量提供学校用户名/密码，页面只处理设备及管理 token。
 
 ## 存储
 
-- 本地：`STORAGE_DRIVER=file`；`.data/schedule.json` 原子替换，重启保留。
-- Vercel：`STORAGE_DRIVER=redis`，设置 `UPSTASH_REDIS_REST_URL` 和 `UPSTASH_REDIS_REST_TOKEN`。
-- Redis 保存单个完整快照，不设 TTL：失败时保留旧课表，并通过 stale 标识其时效。
-- 单家庭、单设备密钥版本。生产/预览环境必须使用独立数据库或禁用预览写入，避免互相覆盖。
+本地文件 .data/schedule.json、.data/sync-status.json；生产使用 Upstash REST。预览/生产环境必须使用不同数据库，避免覆盖。学校凭据和原始登录响应不写入日程缓存。
 
-当前无自动同步，也没有启用 Cron。部署后需导入数据才能使用查询接口。不会自动创建云资源或产生后台抓取。
-
-参考：[Vercel Node.js Functions](https://vercel.com/docs/functions/runtimes/node-js)、[Upstash REST](https://upstash.com/docs/redis/features/restapi)。
+真实学校登录与 14 天同步已在本地通过验证，页面结果已与学校日历对照。云端部署仍需配置 Vercel 环境变量及 Redis。参考 docs/arbor-integration.md。
