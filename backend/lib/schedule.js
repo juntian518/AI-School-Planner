@@ -52,6 +52,7 @@ export function validateSnapshot(input, now = new Date()) {
     return {
       id, title: text(raw.title, 'title'),
       location: raw.location ? text(raw.location, 'location', 80) : '',
+      staff: raw.staff ? text(raw.staff, 'staff', 300) : '',
       start: new Date(raw.start).toISOString(), end: new Date(raw.end).toISOString(),
       week: raw.week ?? null
     };

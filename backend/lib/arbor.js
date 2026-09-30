@@ -34,10 +34,25 @@ export function parseDayPage(page, expectedDate) {
     const details = el.find('.mis-cal-event-time').text().replace(/\s+/g, ' ').trim();
     const match = details.match(/^(\d{2}:\d{2})\s*[-–]\s*(\d{2}:\d{2})(?:\s*\|\s*Location:\s*(.*))?$/);
     if (!id || !title || !match) fail('parse_failed', 'An event has an unsupported format; previous schedule was kept');
-    events.push({ id: `${expectedDate}:${id}`, title, location: match[3] || '',
+    const detailUrl = el.attr('ajax-link');
+    if (detailUrl && !/^\/guardians\/calendar-entry\/tooltip\/id\/\d+$/.test(detailUrl)) fail('parse_failed', 'Unexpected lesson detail URL');
+    events.push({ id: `${expectedDate}:${id}`, title, location: match[3] || '', ...(detailUrl ? { detailUrl } : {}),
       start: localTime(expectedDate, match[1]), end: localTime(expectedDate, match[2]), week });
   });
   return events;
+}
+
+export function parseLessonDetail(html) {
+  const $ = load(html);
+  if ($('.mis-tooltip').length !== 1 || !$('.aligned-list li').length) fail('parse_failed', 'Unsupported lesson detail response');
+  const staff = [];
+  $('.aligned-list li').each((_, el) => {
+    if ($(el).children('b').text().trim() === 'Staff') {
+      const value = $(el).children('span').text().replace(/\s+/g, ' ').trim();
+      if (value) staff.push(value);
+    }
+  });
+  return { staff: staff.join('; ') };
 }
 
 export function findCalendarConfig(value) {
@@ -140,6 +155,14 @@ export class ArborClient {
       }
       events.push(...parseDayPage(cachedPages.get(date), date));
     }
+    this.stage = 'lesson details';
+    let cursor = 0;
+    await Promise.all(Array.from({ length: Math.min(4, events.length) }, async () => {
+      while (cursor < events.length) {
+        const event = events[cursor++];
+        if (event.detailUrl) Object.assign(event, parseLessonDetail(await this.request(event.detailUrl, undefined, 0, true)));
+      }
+    }));
     return validateSnapshot({ schemaVersion: 1, timezone: 'Europe/London', source: 'arbor',
       coverageStart: start, coverageEnd: end, events }, now);
   }

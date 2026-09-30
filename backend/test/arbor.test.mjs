@@ -71,3 +71,11 @@ test('sync lock prevents duplicate fetches and successful sync publishes coverag
   assert.equal(result.state, 'success'); assert.equal(result.eventCount, 0);
   assert.equal((await store.get('status')).coverageEnd, '2026-10-13');
 });
+
+
+test('lesson tooltip extracts decoded staff, supports absent staff and rejects login HTML', async () => {
+  const { parseLessonDetail } = await import('../lib/arbor.js');
+  assert.deepEqual(parseLessonDetail('<div class="mis-tooltip"><ul class="aligned-list"><li><b>Lesson</b>:<span>Demo</span></li><li><b>Staff</b>:<span>Mr A &amp; Ms B</span></li></ul></div>'), {staff:'Mr A & Ms B'});
+  assert.deepEqual(parseLessonDetail('<div class="mis-tooltip"><ul class="aligned-list"><li><b>Lesson</b>:<span>Demo</span></li></ul></div>'), {staff:''});
+  assert.throws(() => parseLessonDetail('<form>Sign in</form>'));
+});
