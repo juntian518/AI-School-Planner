@@ -6,7 +6,7 @@ import { createHandlers } from './lib/handlers.js';
 import { ArborClient, ArborError } from './lib/arbor.js';
 const secret = () => randomBytes(32).toString('hex');
 const session = secret();
-const env = { ...process.env, ARBOR_USERNAME: process.env.ARBOR_USERNAME || process.env.user, ARBOR_PASSWORD: process.env.ARBOR_PASSWORD || process.env.pass, STORAGE_DRIVER: 'file', DEVICE_TOKEN: secret(), ADMIN_TOKEN: secret(), CRON_SECRET: secret() };
+const env = { ...process.env, ARBOR_USERNAME: process.env.ARBOR_USERNAME || process.env.user, ARBOR_PASSWORD: process.env.ARBOR_PASSWORD || process.env.pass, STORAGE_DRIVER: process.env.STORAGE_DRIVER || 'file', DEVICE_TOKEN: secret(), ADMIN_TOKEN: secret(), CRON_SECRET: secret() };
 let schoolClient;
 let connecting = false;
 const handlers = createHandlers({ env, syncClient: () => schoolClient });

@@ -15,7 +15,7 @@
 
 生产 API 使用 Authorization: Bearer 密钥，至少 32 字符。设备、管理、Cron 使用不同的随机密钥。响应均禁止共享缓存。
 
-同步读取未来 14 天，失败返回非 2xx 并记录错误，保留已有快照。Redis 分布式锁避免并发重复登录和抓取。本地进程使用内存锁。同步状态的 succeededAt 表示最近一次成功，即使最新尝试失败也会保留。
+同步读取未来 14 天，失败返回非 2xx 并记录错误，保留已有快照。Supabase/Redis 分布式锁避免并发重复登录和抓取。本地进程使用内存锁。同步状态的 succeededAt 表示最近一次成功，即使最新尝试失败也会保留。
 
 source 可为 arbor、manual、demo；只有真实同步适配器可写入 arbor。手动导入只能使用 manual/demo，原子替换全部数据。fixtures/demo.json 为虚构格式样例。
 
@@ -31,6 +31,8 @@ coverage: unknown 表示所选日期未覆盖，不能解释为当天无课；st
 
 ## 存储
 
-本地文件 .data/schedule.json、.data/sync-status.json；生产使用 Upstash REST。预览/生产环境必须使用不同数据库，避免覆盖。学校凭据和原始登录响应不写入日程缓存。
+本地文件 .data/schedule.json、.data/sync-status.json；生产可使用 Supabase 私有 schema（STORAGE_DRIVER=supabase、SUPABASE_DATABASE_URL），原 Upstash REST 适配保留兼容。预览/生产环境必须使用不同数据库，避免覆盖。学校凭据和原始登录响应不写入日程缓存。
 
-真实学校登录与 14 天同步已在本地通过验证，页面结果已与学校日历对照。云端部署仍需配置 Vercel 环境变量及 Redis。参考 docs/arbor-integration.md。
+真实学校登录与 14 天同步已在本地通过验证，页面结果已与学校日历对照。云端部署仍需配置 Vercel 环境变量及 Supabase。参考 docs/arbor-integration.md。
+
+Supabase 表结构见 migrations/001_supabase.sql；verify_supabase.sql 在事务内验证快照替换和同步锁，结束时回滚所有测试写入。multi-projects 的 ai_school_planner schema 已创建，三张表启用 RLS 且 anon/authenticated 无访问权限。数据库端验证已通过；应用连接池联调需提供连接串。

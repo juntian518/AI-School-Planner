@@ -1,19 +1,18 @@
-# Vercel 部署
+# Vercel + Supabase 部署
 
-1. 导入 juntian518/AI-School-Planner，Root Directory=backend，Framework=Other，Node.js=22.x。静态页面位于 public，API 位于 api。
-2. 为生产环境准备 Upstash Redis，设置 UPSTASH_REDIS_REST_URL、UPSTASH_REDIS_REST_TOKEN、STORAGE_DRIVER=redis。
-3. 设置独立随机 DEVICE_TOKEN、ADMIN_TOKEN、CRON_SECRET（至少 32 字符）。
-4. 设置 ARBOR_STUDENT_ID、ARBOR_USERNAME、ARBOR_PASSWORD。学校密码只放服务端环境变量，不进入 Git 或页面代码。
-5. 部署后打开页面，输入设备密钥和管理密钥，点击「立即同步 Arbor」。
-6. 验证 source=arbor、日期覆盖完整、科目/时间/教室与学校一致。
-7. vercel.json 已配置以下定时任务：每 30 分钟调用 /api/sync。请在第一次生产部署时配置齐全环境变量；若暂时不准备同步，可先移除 crons。
+1. 导入 juntian518/AI-School-Planner，Root Directory=backend，Framework=Other，Node.js=22.x。
+2. 在 Supabase 的 multi-projects 项目中执行 `backend/migrations/001_supabase.sql`。专用 schema 为 `ai_school_planner`，含课表快照、同步状态、同步锁三张表。此步骤需实际执行，提交迁移文件不会自动建表。
+3. 从 Supabase Connect 面板获取 transaction pooler 连接串（通常端口 6543），配置服务端 `SUPABASE_DATABASE_URL` 和 `STORAGE_DRIVER=supabase`。连接串密码中的特殊字符需要 URL 编码。客户端关闭 prepared statements，强制验证 TLS 证书。
+4. 配置独立随机 `DEVICE_TOKEN`、`ADMIN_TOKEN`、`CRON_SECRET`（各至少 32 字符）。
+5. 配置 `ARBOR_STUDENT_ID=8408`、`ARBOR_USERNAME`、`ARBOR_PASSWORD`。全部敏感值仅保存在 Vercel Production 环境变量；不要提交 Git。
+6. 部署后打开模拟页，输入设备密钥和管理密钥，点击“立即同步 Arbor”，验证日期覆盖、科目、时间与教室。
 
-```json
-{ "crons": [{ "path": "/api/sync", "schedule": "*/30 * * * *" }] }
-```
+数据库 schema 不加入 Data API 的 Exposed schemas，不向 anon/authenticated 授权；浏览器和 ESP32 通过 Vercel API 访问。后端数据库连接必须具有该 schema 的读写权限（SQL Editor 创建的表默认由 postgres 拥有）。学校密码不存数据库。
 
-Cron 使用 CRON_SECRET 验证。同步函数最长配置为 300 秒，Redis 锁有效期 330 秒。同步失败保留上一次日程。连接过期、上游格式变化等错误在模拟页显示。
+vercel.json 已配置每 30 分钟调用 /api/sync，使用 CRON_SECRET 验证。同步锁 330 秒，函数最长 300 秒。数据库完整快照不自动过期，同步失败保留上次课表。
 
-预览环境请禁用学校凭据或使用独立数据库，避免与生产共享日程及状态。不要关闭 Vercel 的其他安全功能来让设备访问；如部署保护拦截设备，需按账户实际设置配置受支持的机器访问方式。
+本地默认仍使用文件存储；根目录 .env.local 可设置 STORAGE_DRIVER=supabase 和 SUPABASE_DATABASE_URL 后重启服务进行云端存储联调。未配置时不会自动切换或上传本地课表。
 
-参考：[Vercel Functions](https://vercel.com/docs/functions/runtimes/node-js)、[Cron 管理](https://vercel.com/docs/cron-jobs/manage-cron-jobs)、[Upstash REST](https://upstash.com/docs/redis/features/restapi)。
+预览部署不要使用生产学校凭据及数据库。已有 Redis 适配保留兼容，但采用 Supabase 后无需配置 Upstash。
+
+参考：[Supabase 连接指南](https://supabase.com/docs/guides/database/connecting-to-postgres)、[Vercel Cron](https://vercel.com/docs/cron-jobs/manage-cron-jobs)。
