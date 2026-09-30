@@ -30,7 +30,7 @@ function render() {
   const pages = Math.max(1, Math.ceil(events.length / 4));
   page = Math.min(page, pages - 1);
   $('pageLabel').textContent = (page + 1) + ' / ' + pages;
-  $('pagePrev').disabled = page === 0; $('pageNext').disabled = page === pages - 1;
+
   $('source').textContent = data ? ({ arbor: 'ARBOR', demo: '演示数据', manual: '手动导入' }[data.source] || data.source) : '未加载';
   const week = events.find(e => e.week)?.week;
   $('week').textContent = week ? 'WEEK ' + week : '—';
@@ -106,8 +106,37 @@ $('syncButton').addEventListener('click', sync); $('refreshButton').addEventList
 $('date').addEventListener('change', refresh);
 for (const [id, days] of [['previousDay', -1], ['nextDay', 1]]) $(id).addEventListener('click', () => { $('date').value = shiftDate($('date').value || tomorrow(), days); refresh(); });
 $('tomorrowButton').addEventListener('click', () => { $('date').value = tomorrow(); refresh(); });
-$('pagePrev').addEventListener('click', () => { page--; render(); });
-$('pageNext').addEventListener('click', () => { page++; render(); });
+function navigateScreen(direction) {
+  if (direction === 'left' || direction === 'right') {
+    $('date').value = shiftDate($('date').value || tomorrow(), direction === 'left' ? 1 : -1);
+    refresh();
+  } else {
+    const last = Math.max(0, Math.ceil((data?.events.length || 0) / 4) - 1);
+    page = Math.max(0, Math.min(last, page + (direction === 'up' ? 1 : -1)));
+    render();
+  }
+}
+const screen = $('deviceScreen');
+let gesture = null;
+screen.addEventListener('pointerdown', event => {
+  if (!event.isPrimary || event.button !== 0) return;
+  gesture = { id: event.pointerId, x: event.clientX, y: event.clientY };
+  screen.setPointerCapture(event.pointerId);
+});
+screen.addEventListener('pointerup', event => {
+  if (!gesture || gesture.id !== event.pointerId) return;
+  const dx = event.clientX - gesture.x, dy = event.clientY - gesture.y;
+  gesture = null;
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < 30) return;
+  if (Math.abs(dx) > Math.abs(dy) * 1.2) navigateScreen(dx < 0 ? 'left' : 'right');
+  else if (Math.abs(dy) > Math.abs(dx) * 1.2) navigateScreen(dy < 0 ? 'up' : 'down');
+});
+screen.addEventListener('pointercancel', () => { gesture = null; });
+screen.addEventListener('lostpointercapture', () => { gesture = null; });
+screen.addEventListener('keydown', event => {
+  const direction = {ArrowLeft:'left',ArrowRight:'right',ArrowUp:'up',ArrowDown:'down'}[event.key];
+  if (direction) { event.preventDefault(); navigateScreen(direction); }
+});
 $('date').value = tomorrow();
 function tick() { $('clock').textContent = timeString(new Date()); $('today').textContent = dateString(new Date()); render(); }
 try { const response = await fetch('/api/local'); if (response.ok) { const mode = await response.json(); local = mode.local === true; configured = mode.configured === true; connected = mode.connected === true; if (connected || configured) $('connectionBadge').textContent = configured ? '本地凭据已配置' : '学校已连接'; } } catch {}
