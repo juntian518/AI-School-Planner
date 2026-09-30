@@ -31,8 +31,10 @@ coverage: unknown 表示所选日期未覆盖，不能解释为当天无课；st
 
 ## 存储
 
-本地文件 .data/schedule.json、.data/sync-status.json；生产可使用 Supabase 私有 schema（STORAGE_DRIVER=supabase、SUPABASE_DATABASE_URL），原 Upstash REST 适配保留兼容。预览/生产环境必须使用不同数据库，避免覆盖。学校凭据和原始登录响应不写入日程缓存。
+本地文件 .data/schedule.json、.data/sync-status.json；生产可使用 Supabase Data API（STORAGE_DRIVER=supabase、SUPABASE_URL、SUPABASE_SECRET_KEY），原 Upstash REST 适配保留兼容。预览/生产环境必须使用不同数据库，避免覆盖。学校凭据和原始登录响应不写入日程缓存。
 
 真实学校登录与 14 天同步已在本地通过验证，页面结果已与学校日历对照。云端部署仍需配置 Vercel 环境变量及 Supabase。参考 docs/arbor-integration.md。
 
-Supabase 表结构见 migrations/001_supabase.sql；verify_supabase.sql 在事务内验证快照替换和同步锁，结束时回滚所有测试写入。multi-projects 的 ai_school_planner schema 已创建，三张表启用 RLS 且 anon/authenticated 无访问权限。数据库端验证已通过；应用连接池联调需提供连接串。
+Supabase 表结构见 migrations/001_supabase.sql；verify_supabase.sql 在事务内验证快照替换和同步锁，结束时回滚所有测试写入。multi-projects 的 ai_school_planner schema 已创建，三张表启用 RLS 且 anon/authenticated 无访问权限。Data API 使用 migrations/002_supabase_data_api.sql 中的服务端权限与原子锁函数；不需要数据库密码。
+
+已完成真实 Data API 联调：Arbor 14 天 65 项活动写入并读取一致，模拟页显示 Supabase 中的课表；公开 Key 访问课表与锁 RPC 返回 401。服务端 Secret Key 只通过 apikey 请求头发送，不进入浏览器。

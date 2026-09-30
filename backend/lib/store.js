@@ -1,3 +1,4 @@
+import { createSupabaseStore } from './supabase-store.js';
 import { createPostgresStore } from './postgres-store.js';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
@@ -6,7 +7,8 @@ const locks = new Map();
 
 export function createStore(env = process.env, fetcher = fetch) {
   const driver = env.STORAGE_DRIVER || 'redis';
-  if (driver === 'supabase') return createPostgresStore(env);
+  if (driver === 'supabase') return createSupabaseStore(env, fetcher);
+  if (driver === 'postgres') return createPostgresStore(env);
   if (driver === 'file') {
     if (env.VERCEL || env.NODE_ENV === 'production') throw new Error('File storage is local-only');
     const directory = env.DATA_DIR || join(process.cwd(), '.data');

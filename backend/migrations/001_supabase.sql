@@ -1,5 +1,5 @@
 -- Run in the multi-projects Supabase SQL Editor as postgres.
--- Private schema: do not add it to the Data API exposed schemas.
+-- Initially private. Apply 002 before enabling service-only Data API access.
 begin;
 create schema if not exists ai_school_planner;
 revoke all on schema ai_school_planner from public, anon, authenticated;
