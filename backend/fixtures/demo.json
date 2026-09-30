@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "timezone": "Europe/London",
+  "source": "demo",
+  "coverageStart": "2030-06-03",
+  "coverageEnd": "2030-06-03",
+  "events": [
+    { "id": "demo-1", "title": "Demo English", "location": "Room A", "start": "2030-06-03T08:40:00+01:00", "end": "2030-06-03T09:30:00+01:00", "week": "A" },
+    { "id": "demo-2", "title": "Demo Maths", "location": "Room B", "start": "2030-06-03T09:30:00+01:00", "end": "2030-06-03T10:20:00+01:00", "week": "A" }
+  ]
+}

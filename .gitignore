@@ -1,0 +1,11 @@
+node_modules/
+.env
+.env.*
+!.env.example
+.vercel/
+.data/
+private/
+*.har
+firmware/.pio/
+firmware/include/secrets.h
+
