@@ -12,3 +12,7 @@ firmware/include/secrets.h
 firmware/tools/venv/
 firmware/.pio-core/
 firmware/include/ca_bundle.h
+
+firmware/include/smooth_font.h
+
+firmware/include/smooth_font_large.h

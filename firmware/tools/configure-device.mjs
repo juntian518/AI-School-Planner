@@ -1,0 +1,11 @@
+import { writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+const token = process.env.DEVICE_TOKEN;
+if (!token || !/^[\x21-\x7e]{32,128}$/.test(token)) throw new Error('DEVICE_TOKEN missing or invalid');
+const ssid = process.env.WIFI_SSID ?? process.env.wifi ?? '';
+const password = process.env.WIFI_PASSWORD ?? process.env.wifipass ?? '';
+if (ssid && (Buffer.byteLength(ssid)>32 || password.length<8 || password.length>63)) throw new Error('Invalid Wi-Fi configuration');
+const id = ssid ? createHash('sha256').update(JSON.stringify([ssid,password])).digest('hex') : '';
+const values = {PRESET_DEVICE_TOKEN:token, PRESET_WIFI_SSID:ssid, PRESET_WIFI_PASSWORD:password, PRESET_WIFI_ID:id};
+writeFileSync(new URL('../include/secrets.h', import.meta.url), '#pragma once\n'+Object.entries(values).map(([k,v])=>'static const char '+k+'[] = '+JSON.stringify(v)+';').join('\n')+'\n');
+console.log('Private device configuration generated; Wi-Fi preset '+(ssid?'enabled':'disabled')+'.');
