@@ -61,7 +61,7 @@ public:
       cfg.pin_vsync = GPIO_NUM_41;
       cfg.pin_hsync = GPIO_NUM_40;
       cfg.pin_pclk = GPIO_NUM_39;
-      cfg.freq_write = 16000000;
+      cfg.freq_write = 12000000; // Leave PSRAM bandwidth for Wi-Fi and canvas animation.
 
       cfg.hsync_polarity = 0;
       cfg.hsync_front_porch = 8;

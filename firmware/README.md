@@ -96,8 +96,8 @@ Build: `firmware/tools/venv/Scripts/pio.exe run -d firmware -e crowpanel5`.
 Upload: add `-t upload --upload-port COM5` (check the actual port first).
 
 Official wiring reference: https://github.com/Elecrow-RD/CrowPanel-Advance-5-HMI-ESP32-S3-AI-Powered-IPS-Touch-Screen-800x480/tree/master/example/V1.2_and_V1.3/Arduino/lesson-03/BigInch_LVGL
-RGB clock 16 MHz; I2C SDA15/SCL16; GT911 address 0x5D; controller 0x30.
-Uses the official V1.2/V1.3 LovyanGFX wiring and backlight command 0 (maximum brightness); exact PCB revision remains unconfirmed.
+RGB clock 12 MHz (reduced from the vendor 16 MHz to leave PSRAM bandwidth for networking/animation); I2C SDA15/SCL16; GT911 address 0x5D; controller 0x30.
+Uses official LovyanGFX wiring. I2C is kept at 100 kHz. Backlight is enabled again after RGB initialization using command 0x10, compatible with V1.1 and V1.2/V1.3; exact PCB revision remains unconfirmed.
 Do not apply Waveshare GPIO reset/backlight commands to this integrated board.
 
 Four courses per page, native-resolution antialiased fonts, horizontal date swipes and vertical page swipes.
@@ -107,3 +107,5 @@ Local full factory backup: `private/crowpanel-backup/factory-16mb.bin` (never co
 Factory recovery (only for this backed-up unit, after checking the COM port):
 `firmware/tools/venv/Scripts/python.exe firmware/.pio-core/packages/tool-esptoolpy/esptool.py --chip esp32s3 --port COM5 --baud 460800 write_flash 0 private/crowpanel-backup/factory-16mb.bin`
 This restores the entire factory image and replaces planner settings/cache; it is not part of normal upload.
+
+Serial diagnostics: `b` sends backlight 0x10, `B` sends 0, and `t` temporarily draws a white DISPLAY TEST screen. These commands do not access Arbor or alter credentials.

@@ -226,7 +226,12 @@ void presentAgenda(){
           memcpy(dest,source,WIDTH*2);
         }
       }
-      display->draw16bitRGBBitmap(0,TOP,transitionFrame,WIDTH,HEIGHT);display->flush();delay(1);
+      display->draw16bitRGBBitmap(0,TOP,transitionFrame,WIDTH,HEIGHT);display->flush();
+#ifdef CROWPANEL5
+      delay(12); // Avoid saturating PSRAM while the RGB peripheral scans continuously.
+#else
+      delay(1);
+#endif
     }while(progress<1.0f);
   }
   display->draw16bitRGBBitmap(0,0,next,SCREEN_W,SCREEN_H);display->flush();haveFrame=true;transitionAxis=0;
@@ -366,7 +371,7 @@ void touchLoop(){
 void setup(){
   Serial.begin(115200);setenv("TZ",TZ_LONDON,1);tzset();pinMode(SETUP_BUTTON,INPUT_PULLUP);
 #ifdef CROWPANEL5
-  Wire.begin(TP_SDA,TP_SCL);Wire.setClock(400000);Wire.setTimeOut(30);delay(100);
+  Wire.begin(TP_SDA,TP_SCL);Wire.setClock(100000);Wire.setTimeOut(30);delay(100);
   // V1.2/V1.3 official startup backlight command.
   Wire.beginTransmission(0x30);Wire.write(0);int lightResult=Wire.endTransmission();
   Serial.printf("[panel] controller=%d psram=%u\n",lightResult,ESP.getPsramSize());
@@ -386,6 +391,9 @@ void setup(){
   Wire.begin(TP_SDA,TP_SCL);Wire.setClock(100000);Wire.setTimeOut(30);
 #endif
   Serial.printf("[display] %dx%d canvas=%d animation=%d psramFree=%u\n",SCREEN_W,SCREEN_H,agendaCanvas!=nullptr,previousFrame&&transitionFrame,ESP.getFreePsram());
+#ifdef CROWPANEL5
+  delay(500);Wire.beginTransmission(0x30);Wire.write(0x10);Serial.printf("[backlight] late enable=%d\n",Wire.endTransmission());
+#endif
   filesLock=xSemaphoreCreateMutex();fsReady=LittleFS.begin(false,"/littlefs",10,"littlefs");
   prefs.begin("planner",false);
   // Do not auto-format previously initialized storage on a mount error.
@@ -410,6 +418,21 @@ void setup(){
   xTaskCreatePinnedToCore(networkTask,"network",16384,nullptr,1,nullptr,0);
 }
 void loop(){
+#ifdef CROWPANEL5
+  if(Serial.available()){
+    char command=Serial.read();
+    if(command=='b'||command=='B'){
+      uint8_t value=command=='b'?0x10:0;
+      Wire.beginTransmission(0x30);Wire.write(value);int result=Wire.endTransmission();
+      Serial.printf("[backlight] command=%u result=%d\n",value,result);
+    }
+    if(command=='t'){
+      gfx->fillScreen(0xFFFF);textAt(70,100,"DISPLAY TEST",4,0);gfx->flush();
+      Serial.println("[display] white test shown");lastFrame=millis();redraw=false;
+    }
+  }
+#endif
+
   if(setupMode){gfx->flush();dns.processNextRequest();portal.handleClient();if(millis()-portalStarted>600000)ESP.restart();delay(3);return;}
   if(digitalRead(SETUP_BUTTON)==LOW){if(!bootHeld)bootHeld=millis();if(millis()-bootHeld>3000){prefs.putBool("setup",true);ESP.restart();}}else bootHeld=0;
   // Setup flag is consumed on restart (handled before networking below).
