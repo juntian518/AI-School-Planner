@@ -16,3 +16,5 @@ vercel.json 每分钟调用 /api/sync 检查调度，以 CRON_SECRET 鉴权；�
 保留兼容驱动：STORAGE_DRIVER=postgres 搭配 SUPABASE_DATABASE_URL 为直接数据库连接；STORAGE_DRIVER=redis 为原 Upstash 适配。推荐使用上述 Data API 配置。
 
 参考：[Supabase API Keys](https://supabase.com/docs/guides/getting-started/api-keys)、[自定义 schema](https://supabase.com/docs/guides/api/using-custom-schemas)。
+
+Current status: school sync remains paused (crons=[], ARBOR_SYNC_PAUSED=true). The 21:00 Europe/London schedule takes effect only after explicitly restoring both settings. Local .env.local has a separate pause flag.

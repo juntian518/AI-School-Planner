@@ -75,7 +75,7 @@ test('API import/read roundtrip, auth separation, no-store, and unconfigured syn
   assert.equal((await result.json()).current[0].id, 'demo-1');
   assert.equal((await h.schedule(request('/api/schedule?date=2030-02-30', env.DEVICE_TOKEN))).status, 400);
   assert.equal((await h.sync(request('/api/sync', env.CRON_SECRET))).status, 200);
-  const due = createHandlers({ env, store, clock: () => new Date('2030-06-03T15:00:00Z') });
+  const due = createHandlers({ env, store, clock: () => new Date('2030-06-03T20:00:00Z') });
   assert.equal((await due.sync(request('/api/sync', env.CRON_SECRET))).status, 502);
   assert.equal(status.error.code, 'not_configured');
   assert.equal(saved.events.length, 2);
