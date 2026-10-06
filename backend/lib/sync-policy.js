@@ -4,7 +4,7 @@ export function dailySlot(now) {
   const date = londonDate(now);
   const noon = new Date(date + 'T12:00:00Z');
   const hour = Number(new Intl.DateTimeFormat('en-GB', {timeZone:'Europe/London',hour:'2-digit',hourCycle:'h23'}).format(noon));
-  return new Date(Date.parse(date + 'T16:00:00Z') - (hour - 12) * 3600000);
+  return new Date(Date.parse(date + 'T21:00:00Z') - (hour - 12) * 3600000);
 }
 export function syncDue(status, now) {
   const slot = dailySlot(now);
