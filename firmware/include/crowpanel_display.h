@@ -1,94 +1,66 @@
 #pragma once
-// Hardware configuration from Elecrow official BigInch_LVGL example.
-#define LGFX_USE_V1
-#include <LovyanGFX.hpp>
-#include <lgfx/v1/platforms/esp32s3/Panel_RGB.hpp>
-#include <lgfx/v1/platforms/esp32s3/Bus_RGB.hpp>
-#include <driver/i2c.h>
+#include <esp_lcd_panel_ops.h>
+#include <esp_lcd_panel_rgb.h>
 
-class CrowPanelHardware : public lgfx::LGFX_Device {
-public:
-
-  lgfx::Bus_RGB _bus_instance;
-  lgfx::Panel_RGB _panel_instance;
-//  lgfx::Light_PWM _light_instance;
-  lgfx::Touch_GT911 _touch_instance;
-
-  CrowPanelHardware(void) {
-    {
-      auto cfg = _panel_instance.config();
-
-      cfg.memory_width = 800;
-      cfg.memory_height = 480;
-      cfg.panel_width = 800;
-      cfg.panel_height = 480;
-
-      cfg.offset_x = 0;
-      cfg.offset_y = 0;
-
-      _panel_instance.config(cfg);
-    }
-
-    {
-      auto cfg = _panel_instance.config_detail();
-
-      cfg.use_psram = 1;
-
-      _panel_instance.config_detail(cfg);
-    }
-
-    {
-      auto cfg = _bus_instance.config();
-      cfg.panel = &_panel_instance;
-      cfg.pin_d0 = GPIO_NUM_21;    // B0
-      cfg.pin_d1 = GPIO_NUM_47;    // B1
-      cfg.pin_d2 = GPIO_NUM_48;   // B2
-      cfg.pin_d3 = GPIO_NUM_45;    // B3
-      cfg.pin_d4 = GPIO_NUM_38;    // B4
-      cfg.pin_d5 = GPIO_NUM_9;    // G0
-      cfg.pin_d6 = GPIO_NUM_10;    // G1
-      cfg.pin_d7 = GPIO_NUM_11;    // G2
-      cfg.pin_d8 = GPIO_NUM_12;   // G3
-      cfg.pin_d9 = GPIO_NUM_13;   // G4
-      cfg.pin_d10 = GPIO_NUM_14;   // G5
-      cfg.pin_d11 = GPIO_NUM_7;  // R0
-      cfg.pin_d12 = GPIO_NUM_17;  // R1
-      cfg.pin_d13 = GPIO_NUM_18;  // R2
-      cfg.pin_d14 = GPIO_NUM_3;  // R3
-      cfg.pin_d15 = GPIO_NUM_46;  // R4
-
-      cfg.pin_henable = GPIO_NUM_42;
-      cfg.pin_vsync = GPIO_NUM_41;
-      cfg.pin_hsync = GPIO_NUM_40;
-      cfg.pin_pclk = GPIO_NUM_39;
-      cfg.freq_write = 12000000; // Leave PSRAM bandwidth for Wi-Fi and canvas animation.
-
-      cfg.hsync_polarity = 0;
-      cfg.hsync_front_porch = 8;
-      cfg.hsync_pulse_width = 4;
-      cfg.hsync_back_porch = 8;
-      cfg.vsync_polarity = 0;
-      cfg.vsync_front_porch = 8;
-      cfg.vsync_pulse_width = 4;
-      cfg.vsync_back_porch = 8;
-      cfg.pclk_idle_high = 1;
-
-      _bus_instance.config(cfg);
-    }
-    _panel_instance.setBus(&_bus_instance);
-
-
-    setPanel(&_panel_instance);
+// Elecrow Advance 5-inch RGB565 pinout, with ESP-IDF internal DMA bounce buffers.
+// The LCD reads internal SRAM instead of contending directly with Wi-Fi for PSRAM.
+class CrowPanelDisplay : public Arduino_Canvas {
+  esp_lcd_panel_handle_t panel=nullptr;
+  uint16_t* buffers[2]={nullptr,nullptr};
+  int drawing=1;
+  SemaphoreHandle_t frameDone=nullptr;
+  volatile bool pending=false;
+  static bool IRAM_ATTR frameFinished(esp_lcd_panel_handle_t,const esp_lcd_rgb_panel_event_data_t*,void* context){
+    auto* self=static_cast<CrowPanelDisplay*>(context);BaseType_t wake=pdFALSE;
+    if(self->pending){self->pending=false;xSemaphoreGiveFromISR(self->frameDone,&wake);}
+    return wake==pdTRUE;
   }
-};
-
-// Keep the existing canvas renderer while using the vendor-recommended RGB driver.
-class CrowPanelDisplay : public Arduino_GFX {
-  CrowPanelHardware panel;
  public:
-  CrowPanelDisplay():Arduino_GFX(800,480){}
-  bool begin(int32_t speed=GFX_NOT_DEFINED) override {panel.init();panel.setColorDepth(16);return true;}
-  void writePixelPreclipped(int16_t x,int16_t y,uint16_t color) override {panel.drawPixel(x,y,color);}
-  void writeFillRectPreclipped(int16_t x,int16_t y,int16_t w,int16_t h,uint16_t color) override {panel.fillRect(x,y,w,h,color);}
-  void draw16bitRGBBitmap(int16_t x,int16_t y,uint16_t* pixels,int16_t w,int16_t h) override {panel.pushImage(x,y,w,h,reinterpret_cast<lgfx::rgb565_t*>(pixels));}
+  CrowPanelDisplay():Arduino_Canvas(800,480,nullptr){}
+  bool begin(int32_t speed=GFX_NOT_DEFINED) override {
+    esp_lcd_rgb_panel_config_t c={};
+    c.clk_src=LCD_CLK_SRC_DEFAULT;
+    c.timings.pclk_hz=16000000;c.timings.h_res=800;c.timings.v_res=480;
+    c.timings.hsync_pulse_width=4;c.timings.hsync_back_porch=8;c.timings.hsync_front_porch=8;
+    c.timings.vsync_pulse_width=4;c.timings.vsync_back_porch=8;c.timings.vsync_front_porch=8;
+    c.timings.flags.hsync_idle_low=true;c.timings.flags.vsync_idle_low=true;
+    c.timings.flags.pclk_active_neg=true;
+    c.timings.flags.pclk_idle_high=true;
+    c.data_width=16;c.bits_per_pixel=16;c.num_fbs=2;
+    c.bounce_buffer_size_px=800*20;
+    c.sram_trans_align=4;c.psram_trans_align=64;
+    c.hsync_gpio_num=40;c.vsync_gpio_num=41;c.de_gpio_num=42;c.pclk_gpio_num=39;c.disp_gpio_num=-1;
+    const int pins[16]={21,47,48,45,38,9,10,11,12,13,14,7,17,18,3,46};
+    for(int i=0;i<16;i++)c.data_gpio_nums[i]=pins[i];
+    c.flags.fb_in_psram=true;
+    esp_err_t result=esp_lcd_new_rgb_panel(&c,&panel);
+    frameDone=xSemaphoreCreateBinary();
+    if(!frameDone)return false;
+    esp_lcd_rgb_panel_event_callbacks_t callbacks={};callbacks.on_bounce_frame_finish=frameFinished;
+    if(result==ESP_OK)result=esp_lcd_rgb_panel_register_event_callbacks(panel,&callbacks,this);
+    if(result==ESP_OK)result=esp_lcd_panel_reset(panel);
+    if(result==ESP_OK)result=esp_lcd_panel_init(panel);
+    void* first=nullptr;void* second=nullptr;
+    if(result==ESP_OK)result=esp_lcd_rgb_panel_get_frame_buffer(panel,2,&first,&second);
+    buffers[0]=static_cast<uint16_t*>(first);buffers[1]=static_cast<uint16_t*>(second);
+    _framebuffer=buffers[drawing];
+    Serial.printf("[rgb] driver=%s bounceLines=20 doubleBuffer=1 clock=16MHz\n",esp_err_to_name(result));
+    return result==ESP_OK&&_framebuffer;
+  }
+  void flush() override { present(true); }
+  void present(bool copyChrome) {
+    if(!panel||!_framebuffer)return;
+    while(xSemaphoreTake(frameDone,0)==pdTRUE){}
+    esp_lcd_panel_draw_bitmap(panel,0,0,800,480,_framebuffer);
+    pending=true;
+    if(xSemaphoreTake(frameDone,pdMS_TO_TICKS(200))!=pdTRUE){Serial.println("[rgb] frame switch timeout");return;}
+    uint16_t* shown=_framebuffer;drawing^=1;_framebuffer=buffers[drawing];
+    // Keep the stable header/footer; course animation overwrites the middle directly.
+    // Stage through SRAM to avoid PSRAM source/destination cache-set thrashing.
+    if(!copyChrome)return;
+    static uint16_t line[800];
+    for(int y=0;y<480;y++)if(y<112||y>=424){
+      memcpy(line,shown+y*800,sizeof(line));memcpy(_framebuffer+y*800,line,sizeof(line));
+    }
+  }
 };

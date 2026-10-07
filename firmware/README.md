@@ -96,8 +96,8 @@ Build: `firmware/tools/venv/Scripts/pio.exe run -d firmware -e crowpanel5`.
 Upload: add `-t upload --upload-port COM5` (check the actual port first).
 
 Official wiring reference: https://github.com/Elecrow-RD/CrowPanel-Advance-5-HMI-ESP32-S3-AI-Powered-IPS-Touch-Screen-800x480/tree/master/example/V1.2_and_V1.3/Arduino/lesson-03/BigInch_LVGL
-RGB clock 12 MHz (reduced from the vendor 16 MHz to leave PSRAM bandwidth for networking/animation); I2C SDA15/SCL16; GT911 address 0x5D; controller 0x30.
-Uses official LovyanGFX wiring. I2C is kept at 100 kHz. Backlight is enabled again after RGB initialization using command 0x10, compatible with V1.1 and V1.2/V1.3; exact PCB revision remains unconfirmed.
+RGB clock 16 MHz with two internal 20-line DMA bounce buffers; I2C SDA15/SCL16; GT911 address 0x5D; controller 0x30.
+Uses the official Elecrow pinout with the ESP-IDF RGB driver on Arduino 3.0.7. I2C is kept at 100 kHz. Backlight is enabled again after RGB initialization using command 0x10, compatible with V1.1 and V1.2/V1.3; exact PCB revision remains unconfirmed.
 Do not apply Waveshare GPIO reset/backlight commands to this integrated board.
 
 Four courses per page, native-resolution antialiased fonts, horizontal date swipes and vertical page swipes.
@@ -109,3 +109,21 @@ Factory recovery (only for this backed-up unit, after checking the COM port):
 This restores the entire factory image and replaces planner settings/cache; it is not part of normal upload.
 
 Serial diagnostics: `b` sends backlight 0x10, `B` sends 0, and `t` temporarily draws a white DISPLAY TEST screen. These commands do not access Arbor or alter credentials.
+
+The CrowPanel environment uses pinned pioarduino 51.03.07 (Arduino 3.0.7 / IDF 5.1), while the Waveshare environment retains Espressif32 6.10.0 / Arduino 2.0.17. Internal bounce buffers address RGB/PSRAM contention without overclocking PSRAM. The user confirmed that bounce buffers stopped the jitter. The latest timing and double-buffer changes still require visual verification.
+
+On Windows, run `python firmware/tools/prepare-crowpanel-toolchain.py` before the first CrowPanel build if using the local package overrides in platformio.ini. It downloads official Espressif Windows archives and verifies their published SHA-256 values. The ULP RISC-V compiler is retained at 8.4 because this firmware does not build ULP code.
+
+The RGB driver uses low-idle HSYNC/VSYNC and two PSRAM framebuffers, swapping after the bounce-frame callback. Animation writes directly into the drawing framebuffer; the static setup screen is flushed only once.
+
+### CrowPanel gesture pipeline
+
+The pager caches four neighboring course regions (about 2 MB PSRAM), tracks real GT911 reports over a 100 ms window, and fits a quadratic trajectory for release velocity/acceleration. Settling runs one frame per loop and can be caught by touching again. Cache loading and date rollover are deferred during interaction. Allocation failure falls back to on-demand rendering.
+
+The implementation follows the ideas of AOSP VelocityTracker LSQ2 and ViewPager fling/distance selection, without copying Android source. References:
+- https://android.googlesource.com/platform/frameworks/native/+/d1a8dc7/libs/input/VelocityTracker.cpp
+- https://android.googlesource.com/platform/frameworks/base/+/34457f5/core/java/com/android/internal/widget/ViewPager.java
+
+Boot prints estimator self-test results (constant speed, constant acceleration, stale samples). Gesture completion prints measured average frame time. The display remains at the user-verified 16 MHz timing; this change does not promise phone-level refresh rates.
+
+Latest validation: the user confirmed stable, correctly positioned output before gesture tuning. The current gesture revision restores RGB interrupt initialization to the original core, locks each contact to a dominant axis, and prevents crossing the starting point from opening the opposite page. Device estimator and axis self-tests pass. Real-world gesture stability is still awaiting user confirmation; earlier measured animation throughput was approximately 10 FPS, so phone-like smoothness is not verified.

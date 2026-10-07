@@ -36,6 +36,7 @@ Document* snapshotPtr=nullptr;
 #define snapshot (*snapshotPtr)
 #ifdef CROWPANEL5
 #include "crowpanel_display.h"
+#include "gesture_motion.h"
 Arduino_GFX* gfx=new CrowPanelDisplay();
 #else
 Arduino_DataBus* bus=new Arduino_ESP32SPI(LCD_DC,LCD_CS,LCD_SCLK,LCD_MOSI,LCD_MISO,FSPI);
@@ -199,7 +200,11 @@ void drawAgenda(){
 #endif
 }
 
+void invalidateDragCache();
 void presentAgenda(){
+#ifdef CROWPANEL5
+  invalidateDragCache();
+#endif
   if(!agendaCanvas||!previousFrame||!transitionFrame){drawAgenda();gfx->flush();transitionAxis=0;return;}
   uint16_t* next=agendaCanvas->getFramebuffer();
   if(haveFrame)memcpy(previousFrame,next,SCREEN_W*SCREEN_H*2);
@@ -214,7 +219,11 @@ void presentAgenda(){
       int distance=transitionAxis==1?WIDTH:HEIGHT;
       int shift=constrain(int(eased*distance+0.5f),0,distance);
       for(int y=0;y<HEIGHT;y++){
+#ifdef CROWPANEL5
+        uint16_t* dest=static_cast<CrowPanelDisplay*>(display)->getFramebuffer()+(TOP+y)*WIDTH;
+#else
         uint16_t* dest=transitionFrame+y*WIDTH;
+#endif
         if(transitionAxis==1){
           uint16_t* oldRow=previousFrame+(TOP+y)*WIDTH;uint16_t* newRow=next+(TOP+y)*WIDTH;
           if(transitionDirection>0){memcpy(dest,oldRow+shift,(WIDTH-shift)*2);memcpy(dest+WIDTH-shift,newRow,shift*2);}
@@ -226,9 +235,12 @@ void presentAgenda(){
           memcpy(dest,source,WIDTH*2);
         }
       }
-      display->draw16bitRGBBitmap(0,TOP,transitionFrame,WIDTH,HEIGHT);display->flush();
+#ifndef CROWPANEL5
+      display->draw16bitRGBBitmap(0,TOP,transitionFrame,WIDTH,HEIGHT);
+#endif
+      display->flush();
 #ifdef CROWPANEL5
-      delay(12); // Avoid saturating PSRAM while the RGB peripheral scans continuously.
+      delay(1); // Frame presentation already waits for the display boundary.
 #else
       delay(1);
 #endif
@@ -333,19 +345,23 @@ list.onchange=()=>save.disabled=!list.value;rescan.onclick=()=>scan(true);scan()
     if(!prefs.putString("config",raw)){portal.send(500,"text/plain","Could not save settings");return;}
     portal.send(200,"text/plain","Saved. Reconnect your phone to home WiFi. Device restarting.");delay(500);ESP.restart();
   });
-  portal.onNotFound([]{portal.sendHeader("Location","http://192.168.4.1/",true);portal.send(302,"text/plain","");});portal.begin();
+  portal.onNotFound([]{portal.sendHeader("Location","http://192.168.4.1/",true);portal.send(302,"text/plain","");});portal.begin();gfx->flush();
 }
 // FT6336U: point count at 0x02; first X/Y at 0x03..0x06.
+bool touchSampleFresh=false;
 int readTouch(int& x,int& y){
+  touchSampleFresh=false;
 #ifdef CROWPANEL5
-  static int heldX=0,heldY=0;static bool held=false;static uint32_t reportAt=0;
+  static int heldX=0,heldY=0;static bool held=false;static uint32_t reportAt=0;static uint8_t heldId=0;
   auto readReg=[](uint16_t reg,uint8_t* out,size_t len){Wire.beginTransmission(0x5D);Wire.write(reg>>8);Wire.write(reg&255);if(Wire.endTransmission(false))return false;if(Wire.requestFrom(0x5D,int(len))!=len)return false;for(size_t i=0;i<len;i++)out[i]=Wire.read();return true;};
   uint8_t status;if(!readReg(0x814E,&status,1))return -1;
-  if(!(status&0x80)){if(held&&millis()-reportAt<150){x=heldX;y=heldY;return 1;}held=false;return 0;}
+  if(!(status&0x80)){if(held){if(millis()-reportAt>500)return -1;x=heldX;y=heldY;return 1;}return 0;}
   uint8_t point[5]={};int n=status&15;bool ok=n==1?readReg(0x814F,point,5):true;
   Wire.beginTransmission(0x5D);Wire.write(0x81);Wire.write(0x4E);Wire.write(0);Wire.endTransmission();
-  if(!ok||n>1){held=false;return -1;}held=n==1;reportAt=millis();if(!held)return 0;
-  x=point[1]|(point[2]<<8);y=point[3]|(point[4]<<8);if(x>=SCREEN_W||y>=SCREEN_H){held=false;return -1;}heldX=x;heldY=y;return 1;
+  if(!ok||n>1)return -1;
+  if(n==1&&held&&point[0]!=heldId)return -1;
+  held=n==1;reportAt=millis();if(!held)return 0;heldId=point[0];
+  x=point[1]|(point[2]<<8);y=point[3]|(point[4]<<8);if(x>=SCREEN_W||y>=SCREEN_H){held=false;return -1;}heldX=x;heldY=y;touchSampleFresh=true;return 1;
 #else
   Wire.beginTransmission(0x38);Wire.write(0x02);if(Wire.endTransmission(false))return -1;
   if(Wire.requestFrom(0x38,5)!=5)return -1;
@@ -355,6 +371,123 @@ int readTouch(int& x,int& y){
   x=py;y=319-px;if(TOUCH_FLIP_X)x=479-x;if(TOUCH_FLIP_Y)y=319-y;return 1;
 #endif
 }
+#ifdef CROWPANEL5
+bool fingerDown=false,dragReady=false,dragAllowed=false,settling=false;
+float settleStart=0,settleVelocity=0;int settleEnd=0;uint32_t settleBegan=0;
+uint32_t dragFrames=0,dragMicros=0;
+int dragAxis=0,dragDirection=0,dragShift=0,dragPage=0;
+String dragDate;
+uint16_t* dragCache[4]={};bool dragCacheValid[4]={};
+void invalidateDragCache(){for(int i=0;i<4;i++)dragCacheValid[i]=false;}
+void warmDragCache(){
+  if(fingerDown||settling||!haveFrame||!agendaCanvas||!previousFrame)return;
+  for(int i=0;i<4;i++)if(!dragCacheValid[i]){
+    if(!dragCache[i])dragCache[i]=(uint16_t*)heap_caps_malloc(SCREEN_W*ANIM_H*2,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(!dragCache[i])return;
+    String oldDate=selectedDate;int oldPage=page;int direction=(i%2)?1:-1;
+    if(i<2){selectedDate=shiftDate(selectedDate,direction);page=0;}
+    else{JsonObject rows[64];page=constrain(page+direction,0,max(0,(dayEvents(rows)-1)/PER_PAGE));}
+    memcpy(previousFrame,agendaCanvas->getFramebuffer(),SCREEN_W*SCREEN_H*2);
+    Arduino_GFX* display=gfx;gfx=agendaCanvas;drawAgenda();gfx=display;
+    memcpy(dragCache[i],agendaCanvas->getFramebuffer()+SCREEN_W*ANIM_TOP,SCREEN_W*ANIM_H*2);
+    memcpy(agendaCanvas->getFramebuffer(),previousFrame,SCREEN_W*SCREEN_H*2);
+    selectedDate=oldDate;page=oldPage;dragCacheValid[i]=true;return;
+  }
+}
+void dragFrame(int shift){
+  uint32_t frameStarted=micros();
+  const int W=SCREEN_W,H=ANIM_H,T=ANIM_TOP;
+  auto* dest=static_cast<CrowPanelDisplay*>(gfx)->getFramebuffer();
+  auto* next=agendaCanvas->getFramebuffer();
+  static uint16_t scratch[SCREEN_W];
+  for(int y=0;y<H;y++){
+    auto* row=scratch;
+    if(dragAxis==1){
+      auto* old=previousFrame+(T+y)*W;auto* incoming=next+(T+y)*W;
+      if(dragDirection>0){memcpy(row,old+shift,(W-shift)*2);memcpy(row+W-shift,incoming,shift*2);}
+      else{memcpy(row,incoming+W-shift,shift*2);memcpy(row+shift,old,(W-shift)*2);}
+    }else{
+      int sy=y+dragDirection*shift;
+      auto* source=sy>=0&&sy<H?previousFrame+(T+sy)*W:next+(T+(sy<0?sy+H:sy-H))*W;
+      memcpy(row,source,W*2);
+    }
+    memcpy(dest+(T+y)*W,scratch,W*2);
+  }
+  uint32_t composed=micros();static_cast<CrowPanelDisplay*>(gfx)->present(false);dragFrames++;dragMicros+=micros()-frameStarted;
+  if(dragFrames==2)Serial.printf("[motion] composeUs=%u presentUs=%u\n",composed-frameStarted,micros()-composed);
+}
+void prepareDrag(int direction){
+  dragDirection=direction;dragDate=selectedDate;dragPage=page;
+  if(dragAxis==1){dragDate=shiftDate(selectedDate,direction);dragPage=0;dragAllowed=dragDate.length()>0;}
+  else{JsonObject rows[64];int last=max(0,(dayEvents(rows)-1)/PER_PAGE);dragPage=constrain(page+direction,0,last);dragAllowed=dragPage!=page;}
+  String oldDate=selectedDate;int oldPage=page;
+  int cacheIndex=(dragAxis==1?0:2)+(direction>0?1:0);
+  if(dragAllowed&&dragCacheValid[cacheIndex])memcpy(agendaCanvas->getFramebuffer()+SCREEN_W*ANIM_TOP,dragCache[cacheIndex],SCREEN_W*ANIM_H*2);
+  else if(dragAllowed){selectedDate=dragDate;page=dragPage;Arduino_GFX* display=gfx;gfx=agendaCanvas;drawAgenda();gfx=display;selectedDate=oldDate;page=oldPage;}
+  else memcpy(agendaCanvas->getFramebuffer(),previousFrame,SCREEN_W*SCREEN_H*2);
+  dragReady=true;
+}
+void finishDrag(){
+  invalidateDragCache();
+  if(settleEnd){selectedDate=dragDate;page=dragPage;if(dragAxis==1)followTomorrow=false;}
+  Arduino_GFX* display=gfx;gfx=agendaCanvas;drawAgenda();gfx=display;
+  gfx->draw16bitRGBBitmap(0,0,agendaCanvas->getFramebuffer(),SCREEN_W,SCREEN_H);gfx->flush();
+  settling=false;dragReady=false;dragAxis=0;lastFrame=millis();
+  Serial.printf("[motion] frames=%u avgFrameMs=%.1f\n",dragFrames,dragFrames?dragMicros/1000.0f/dragFrames:0);
+}
+void touchLoop(){
+  static int sx,sy,anchor=0;static bool blocked=false;static GestureMotion motion;
+  int x,y;int state=readTouch(x,y);uint32_t now=millis();
+  if(state<0){
+    // A lost contact/multiple fingers must not become a fling or a new axis.
+    blocked=true;fingerDown=false;
+    if(dragReady&&!settling){settleStart=dragShift;settleEnd=0;settleVelocity=0;settleBegan=now;settling=true;}
+  }
+  if(blocked){if(state==0)blocked=false;else state=-1;}
+  if(state==1&&touchSampleFresh){
+    if(!fingerDown){
+      fingerDown=true;sx=x;sy=y;motion.clear();
+      if(settling){settling=false;anchor=-dragDirection*dragShift;motion.add(now,anchor);}
+      else{dragAxis=0;dragReady=false;dragShift=0;anchor=0;dragFrames=dragMicros=0;motion.add(now,0);}
+      return;
+    }
+    if(!agendaCanvas||!previousFrame||!haveFrame)return;
+    int dx=x-sx,dy=y-sy;
+    if(!dragAxis){
+      dragAxis=chooseDragAxis(dx,dy);if(!dragAxis)return;
+      memcpy(previousFrame,agendaCanvas->getFramebuffer(),SCREEN_W*SCREEN_H*2);
+      Serial.printf("[motion] lock axis=%s\n",dragAxis==1?"horizontal":"vertical");
+    }
+    int position=anchor+(dragAxis==1?dx:dy);int direction=position<0?1:-1;
+    motion.add(now,position);
+    if(!dragReady)prepareDrag(direction);
+    int distance=dragAxis==1?SCREEN_W:ANIM_H;
+    int shift=constrain(-dragDirection*position,0,distance);if(!dragAllowed)shift=int(48.0f*shift/(shift+120.0f));
+    if(shift!=dragShift){dragShift=shift;dragFrame(dragShift);}return;
+  }
+  if(state==0&&fingerDown){
+    fingerDown=false;if(!dragReady)return;
+    int distance=dragAxis==1?SCREEN_W:ANIM_H;
+    float velocity,acceleration;motion.estimate(now,velocity,acceleration);
+    float v=-dragDirection*velocity,a=-dragDirection*acceleration;
+    // ViewPager-style fling-or-distance choice; acceleration is limited to a short forecast.
+    float forecast=v+constrain(a*12.0f,-.08f,.08f);
+    bool fling=dragShift>24&&fabsf(forecast)>.45f;
+    bool commit=dragAllowed&&(fling?forecast>0:dragShift>distance*.45f);
+    settleStart=dragShift;settleEnd=commit?distance:0;settleVelocity=dragAllowed?v:v*.25f;
+    settleBegan=now;settling=true;
+    Serial.printf("[motion] velocity=%.2f acceleration=%.4f commit=%d\n",v,a,commit);
+  }
+  if(settling){
+    float elapsed=float(now-settleBegan),omega=.026f,offset=settleStart-settleEnd;
+    float value=settleEnd+(offset+(settleVelocity+omega*offset)*elapsed)*expf(-omega*elapsed);
+    int distance=dragAxis==1?SCREEN_W:ANIM_H;
+    dragShift=constrain(int(value+.5f),0,distance);dragFrame(dragShift);
+    if(elapsed>=360||(elapsed>60&&fabsf(value-settleEnd)<.8f))finishDrag();
+  }
+}
+
+#else
 void touchLoop(){
   static bool active=false,cancelled=false;static int sx,sy,lx,ly;static uint32_t began;
   int x,y;int state=readTouch(x,y);
@@ -368,13 +501,17 @@ void touchLoop(){
     if(target.length()){selectedDate=target;followTomorrow=false;page=0;transitionAxis=1;transitionDirection=dx<0?1:-1;redraw=true;}
   }else if(abs(dy)>abs(dx)*1.2){JsonObject rows[64];int last=max(0,(dayEvents(rows)-1)/PER_PAGE);int target=constrain(page+(dy<0?1:-1),0,last);if(target!=page){page=target;transitionAxis=2;transitionDirection=dy<0?1:-1;redraw=true;}}
 }
+#endif
+
 void setup(){
   Serial.begin(115200);setenv("TZ",TZ_LONDON,1);tzset();pinMode(SETUP_BUTTON,INPUT_PULLUP);
 #ifdef CROWPANEL5
+  Serial.printf("[motion] estimator tests=%s axis tests=%s\n",gestureMotionSelfTest()?"PASS":"FAIL",gestureAxisSelfTest()?"PASS":"FAIL");
   Wire.begin(TP_SDA,TP_SCL);Wire.setClock(100000);Wire.setTimeOut(30);delay(100);
   // V1.2/V1.3 official startup backlight command.
   Wire.beginTransmission(0x30);Wire.write(0);int lightResult=Wire.endTransmission();
   Serial.printf("[panel] controller=%d psram=%u\n",lightResult,ESP.getPsramSize());
+  // Keep RGB interrupts on the original, previously stable display task/core.
   if(!gfx->begin()){Serial.println("[panel] initialization failed");while(true)delay(1000);}
 #else
   pinMode(SD_CS,OUTPUT);digitalWrite(SD_CS,HIGH);gfx->begin(27000000);pinMode(LCD_BL,OUTPUT);digitalWrite(LCD_BL,HIGH);
@@ -433,13 +570,23 @@ void loop(){
   }
 #endif
 
-  if(setupMode){gfx->flush();dns.processNextRequest();portal.handleClient();if(millis()-portalStarted>600000)ESP.restart();delay(3);return;}
+  if(setupMode){dns.processNextRequest();portal.handleClient();if(millis()-portalStarted>600000)ESP.restart();delay(3);return;}
   if(digitalRead(SETUP_BUTTON)==LOW){if(!bootHeld)bootHeld=millis();if(millis()-bootHeld>3000){prefs.putBool("setup",true);ESP.restart();}}else bootHeld=0;
   // Setup flag is consumed on restart (handled before networking below).
-  if(cacheChanged){cacheChanged=false;loadCache();redraw=true;}
-  if(followTomorrow&&clockValid){String tomorrow=shiftDate(dateOf(time(nullptr)),1);if(selectedDate!=tomorrow){selectedDate=tomorrow;page=0;redraw=true;}}
+  bool interactionBusy=false;
+#ifdef CROWPANEL5
+  interactionBusy=fingerDown||settling;
+#endif
+  if(cacheChanged&&!interactionBusy){cacheChanged=false;loadCache();redraw=true;}
+  if(!interactionBusy&&followTomorrow&&clockValid){String tomorrow=shiftDate(dateOf(time(nullptr)),1);if(selectedDate!=tomorrow){selectedDate=tomorrow;page=0;redraw=true;}}
   touchLoop();
+#ifdef CROWPANEL5
+  interactionBusy=fingerDown||settling;
+#endif
   static uint32_t diagnosticAt=0;if(millis()-diagnosticAt>10000){diagnosticAt=millis();Serial.printf("[status] wifi=%d clock=%d sync=%d fs=%d events=%u heap=%u\n",int(WiFi.status()),clockValid,networkState,fsReady,unsigned(snapshot["events"].size()),ESP.getFreeHeap());}
-  if(redraw||millis()-lastFrame>60000){presentAgenda();redraw=false;lastFrame=millis();}
-  delay(10);
+  if(!interactionBusy&&(redraw||millis()-lastFrame>60000)){presentAgenda();redraw=false;lastFrame=millis();}
+#ifdef CROWPANEL5
+  if(!interactionBusy)warmDragCache();
+#endif
+  delay(interactionBusy?1:5);
 }
